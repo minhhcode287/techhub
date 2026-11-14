@@ -1,0 +1,8 @@
+{
+  "name": "TechHub",
+  "description": "Nền tảng bán thiết bị công nghệ và cho thuê máy ảnh thông minh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
