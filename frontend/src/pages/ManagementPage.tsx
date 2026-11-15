@@ -24,6 +24,9 @@ import {
   MapPin,
   Calendar,
   ShieldCheck,
+  AlertCircle,
+  ImageOff,
+  Upload,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api, type Product, type Order, type RentalBooking, type User } from "../services/api";
@@ -126,6 +129,26 @@ interface TopPerformingData {
   }>;
 }
 
+const DEFAULT_PRODUCT_IMAGE =
+  "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80";
+
+// Tự động lọc ký tự không phải số, loại bỏ số 0 vô nghĩa ở đầu và format theo vi-VN (phân tách hàng nghìn bằng dấu chấm)
+const formatCurrencyDisplay = (val: string | number): string => {
+  if (val === "" || val === undefined || val === null) return "";
+  const cleanStr = String(val).replace(/\D/g, "");
+  if (!cleanStr) return "";
+  const noLeadingZero = cleanStr.replace(/^0+(?=\d)/, "");
+  return noLeadingZero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
+// Parse chuỗi đã format về kiểu Number nguyên thủy
+const parseCurrencyValue = (val: string): number => {
+  if (!val) return 0;
+  const cleanStr = val.replace(/\D/g, "");
+  const num = parseInt(cleanStr, 10);
+  return isNaN(num) ? 0 : num;
+};
+
 export default function ManagementPage() {
   const { user, loading: authLoading } = useAuth();
   const isAuthenticated = !!user;
@@ -169,12 +192,13 @@ export default function ManagementPage() {
   // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [priceInput, setPriceInput] = useState<string>("");
+  const [originalPriceInput, setOriginalPriceInput] = useState<string>("");
+  const [imagePreviewError, setImagePreviewError] = useState<boolean>(false);
   const [productForm, setProductForm] = useState({
     name: "",
     category: "laptop" as Product["category"],
     brand: "Apple",
-    price: 0,
-    originalPrice: 0,
     stock: 10,
     description: "",
     image: "",
@@ -302,53 +326,156 @@ export default function ManagementPage() {
   /*                            PRODUCT HANDLERS                                */
   /* -------------------------------------------------------------------------- */
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Giới hạn dung lượng < 4MB (4 * 1024 * 1024)
+    const MAX_FILE_SIZE = 4 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      setErrorMessage(
+        `File ảnh "${file.name}" quá lớn (${(file.size / (1024 * 1024)).toFixed(1)}MB). Vui lòng chọn ảnh dung lượng dưới 4MB.`
+      );
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Data = event.target?.result as string;
+      if (base64Data) {
+        setProductForm((prev) => ({ ...prev, image: base64Data }));
+        setImagePreviewError(false);
+        showToast(`Đã tải ảnh "${file.name}" từ thiết bị thành công!`);
+      }
+    };
+    reader.onerror = () => {
+      setErrorMessage("Đã xảy ra lỗi khi đọc file ảnh từ máy. Vui lòng thử lại.");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const handleOpenProductModal = (product?: Product) => {
+    setImagePreviewError(false);
     if (product) {
       setEditingProduct(product);
       setProductForm({
         name: product.name,
         category: product.category,
         brand: product.brand,
-        price: product.price,
-        originalPrice: product.originalPrice || product.price,
         stock: product.stock,
         description: product.description || "",
         image: product.image || "",
       });
+      setPriceInput(formatCurrencyDisplay(product.price));
+      setOriginalPriceInput(
+        product.originalPrice ? formatCurrencyDisplay(product.originalPrice) : ""
+      );
     } else {
       setEditingProduct(null);
       setProductForm({
         name: "",
         category: "laptop",
         brand: "Apple",
-        price: 15000000,
-        originalPrice: 16000000,
         stock: 10,
         description: "",
-        image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80",
+        image: "",
       });
+      setPriceInput("");
+      setOriginalPriceInput("");
     }
     setIsProductModalOpen(true);
   };
 
+  const handleAdjustPrice = (delta: number) => {
+    const current = parseCurrencyValue(priceInput);
+    const next = Math.max(0, current + delta);
+    setPriceInput(next === 0 && delta < 0 ? "" : formatCurrencyDisplay(next));
+  };
+
+  const handleAdjustOriginalPrice = (delta: number) => {
+    const current = parseCurrencyValue(originalPriceInput);
+    const next = Math.max(0, current + delta);
+    setOriginalPriceInput(next === 0 && delta < 0 ? "" : formatCurrencyDisplay(next));
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productForm.name || productForm.price <= 0) {
-      setErrorMessage("Vui lòng nhập tên và giá sản phẩm hợp lệ");
+    const finalPrice = parseCurrencyValue(priceInput);
+    const finalOriginalPrice = parseCurrencyValue(originalPriceInput);
+
+    if (!productForm.name.trim()) {
+      setErrorMessage("Vui lòng nhập tên sản phẩm");
       return;
     }
+    if (finalPrice <= 0) {
+      setErrorMessage("Vui lòng nhập giá bán sản phẩm hợp lệ (> 0 VNĐ)");
+      return;
+    }
+
+    const finalImage =
+      !productForm.image.trim() || imagePreviewError
+        ? DEFAULT_PRODUCT_IMAGE
+        : productForm.image.trim();
+
+    const payload: Partial<Product> = {
+      name: productForm.name.trim(),
+      category: productForm.category,
+      brand: productForm.brand.trim() || "TechHub",
+      price: finalPrice,
+      originalPrice: finalOriginalPrice || finalPrice,
+      stock: Number(productForm.stock) >= 0 ? Number(productForm.stock) : 10,
+      description: productForm.description.trim() || "Sản phẩm công nghệ chính hãng tại TechHub.",
+      image: finalImage,
+    };
 
     try {
       setLoading(true);
       if (editingProduct) {
-        await api.updateProduct(editingProduct._id, productForm);
+        const res = await api.updateProduct(editingProduct._id, payload);
         showToast("Cập nhật thông tin sản phẩm thành công!");
+        if (res.data) {
+          setProducts((prev) =>
+            prev.map((p) => (p._id === editingProduct._id ? res.data : p))
+          );
+        }
       } else {
-        await api.createProduct(productForm);
+        const res = await api.createProduct(payload);
         showToast("Thêm sản phẩm mới vào kho thành công!");
+        if (res.data) {
+          // Append trực tiếp item mới vào đầu state danh sách
+          setProducts((prev) => [res.data, ...prev.filter((p) => p._id !== res.data._id)]);
+        }
       }
+
       setIsProductModalOpen(false);
-      fetchData();
+
+      // Reset form về rỗng
+      setEditingProduct(null);
+      setProductForm({
+        name: "",
+        category: "laptop",
+        brand: "Apple",
+        stock: 10,
+        description: "",
+        image: "",
+      });
+      setPriceInput("");
+      setOriginalPriceInput("");
+      setImagePreviewError(false);
+
+      // Reset bộ lọc để sản phẩm mới thêm lập tức xuất hiện trên bảng quản lý
+      setProductSearch("");
+      setProductCategory("all");
+
+      // Đồng bộ lại danh sách mới nhất từ server
+      const freshRes = await api.getProducts();
+      if (freshRes.success && freshRes.data) {
+        setProducts(freshRes.data);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi khi lưu sản phẩm";
       setErrorMessage(msg);
@@ -1403,18 +1530,22 @@ export default function ManagementPage() {
                   Top Sản Phẩm Bán Chạy Nhất
                 </h3>
                 <div className="mt-3 divide-y divide-[#D1D9E6]/60">
-                  {topPerformingData?.topSellingProducts?.map((p, idx: number) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-[#6C63FF]">#{idx + 1}</span>
-                        <span className="font-bold text-[#3D4852]">{p.name}</span>
+                  {topPerformingData?.topSellingProducts && topPerformingData.topSellingProducts.length > 0 ? (
+                    topPerformingData.topSellingProducts.map((p, idx: number) => (
+                      <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <span className="font-extrabold text-[#6C63FF]">#{idx + 1}</span>
+                          <span className="font-bold text-[#3D4852] truncate">{p.name}</span>
+                        </div>
+                        <div className="text-right whitespace-nowrap">
+                          <span className="text-[#6B7280] mr-3">{p.unitsSold} cái</span>
+                          <span className="font-extrabold text-[#3D4852]">{formatVND(p.totalRevenue)}</span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[#6B7280] mr-3">{p.unitsSold} cái</span>
-                        <span className="font-extrabold text-[#3D4852]">{formatVND(p.totalRevenue)}</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="py-6 text-center text-xs text-[#6B7280]">Chưa có dữ liệu bán hàng trong kỳ này</div>
+                  )}
                 </div>
               </NeuCard>
 
@@ -1424,18 +1555,24 @@ export default function ManagementPage() {
                   Top Máy Ảnh Cho Thuê Nhiều Nhất
                 </h3>
                 <div className="mt-3 divide-y divide-[#D1D9E6]/60">
-                  {topPerformingData?.topRentedCameras?.map((c, idx: number) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-[#38B2AC]">#{idx + 1}</span>
-                        <span className="font-bold text-[#3D4852]">{c.name}</span>
+                  {topPerformingData?.topRentedCameras && topPerformingData.topRentedCameras.length > 0 ? (
+                    topPerformingData.topRentedCameras.map((c, idx: number) => (
+                      <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <span className="font-extrabold text-[#38B2AC]">#{idx + 1}</span>
+                          <span className="font-bold text-[#3D4852] truncate">{c.name}</span>
+                        </div>
+                        <div className="text-right whitespace-nowrap">
+                          <span className="text-[#6B7280] mr-3">
+                            {c.rentalCount} lượt{c.totalRentalDays ? ` (${c.totalRentalDays} ngày)` : ""}
+                          </span>
+                          <span className="font-extrabold text-[#38B2AC]">{formatVND(c.totalRentalRevenue)}</span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[#6B7280] mr-3">{c.rentalCount} lượt</span>
-                        <span className="font-extrabold text-[#38B2AC]">{formatVND(c.totalRentalRevenue)}</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="py-6 text-center text-xs text-[#6B7280]">Chưa có dữ liệu thuê máy ảnh trong kỳ này</div>
+                  )}
                 </div>
               </NeuCard>
             </div>
@@ -1483,14 +1620,16 @@ export default function ManagementPage() {
         isOpen={isProductModalOpen}
         onClose={() => setIsProductModalOpen(false)}
         title={editingProduct ? "Chỉnh sửa sản phẩm" : "Thêm sản phẩm mới"}
-        subtitle={editingProduct ? "Cập nhật giá, mô tả, tồn kho" : "Thêm thiết bị mới vào danh mục bán"}
+        subtitle={editingProduct ? "Cập nhật giá, mô tả, tồn kho và hình ảnh thiết bị" : "Thêm thiết bị mới vào danh mục bán hàng"}
+        maxWidth="3xl"
+        id="product-manage-modal"
       >
-        <form onSubmit={handleSaveProduct} className="space-y-4">
+        <form onSubmit={handleSaveProduct} className="space-y-5">
           <NeuInput
             label="Tên sản phẩm *"
             value={productForm.name}
             onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-            placeholder="Ví dụ: MacBook Pro 16 M3 Max"
+            placeholder="Ví dụ: MacBook Pro 16 M3 Max, Sony A7 IV..."
             required
           />
 
@@ -1521,36 +1660,229 @@ export default function ManagementPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <NeuInput
-              label="Giá bán (VNĐ) *"
-              type="number"
-              value={productForm.price}
-              onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
-              required
-            />
-            <NeuInput
-              label="Giá gốc (VNĐ)"
-              type="number"
-              value={productForm.originalPrice}
-              onChange={(e) => setProductForm({ ...productForm, originalPrice: Number(e.target.value) })}
-            />
+          {/* Ô NHẬP GIÁ TIỀN RỘNG RÃI (BỎ VỠ SỐ LỚN, TABULAR-NUMS, NÚT +- 100K) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* GIÁ BÁN */}
+            <div className="flex flex-col justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-[#6B7280]">
+                GIÁ BÁN (VNĐ) *
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={priceInput}
+                    onChange={(e) => setPriceInput(formatCurrencyDisplay(e.target.value))}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        handleAdjustPrice(100000);
+                      } else if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        handleAdjustPrice(-100000);
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-full bg-[#E0E5EC] text-[#3D4852] font-extrabold tabular-nums text-base md:text-lg rounded-2xl py-3.5 pl-4 pr-16 neu-input outline-none tracking-wide"
+                    required
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs md:text-sm font-black text-[#6B7280] pointer-events-none select-none tracking-normal">
+                    VNĐ
+                  </span>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPrice(-100000)}
+                    className="h-12 w-12 rounded-2xl neu-btn flex items-center justify-center font-black text-lg text-[#6B7280] hover:text-[#E53E3E] cursor-pointer transition-colors active:scale-95"
+                    title="Giảm 100.000 VNĐ (Phím mũi tên Xuống)"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPrice(100000)}
+                    className="h-12 w-12 rounded-2xl neu-btn flex items-center justify-center font-black text-lg text-[#6B7280] hover:text-[#6C63FF] cursor-pointer transition-colors active:scale-95"
+                    title="Tăng 100.000 VNĐ (Phím mũi tên Lên)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <p className="mt-1 text-[11px] text-[#6B7280] font-medium">
+                Dùng nút + / - hoặc phím mũi tên Lên/Xuống để chỉnh ±100.000 VNĐ
+              </p>
+            </div>
+
+            {/* GIÁ GỐC */}
+            <div className="flex flex-col justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-[#6B7280]">
+                GIÁ GỐC (VNĐ)
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={originalPriceInput}
+                    onChange={(e) => setOriginalPriceInput(formatCurrencyDisplay(e.target.value))}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        handleAdjustOriginalPrice(100000);
+                      } else if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        handleAdjustOriginalPrice(-100000);
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-full bg-[#E0E5EC] text-[#3D4852] font-extrabold tabular-nums text-base md:text-lg rounded-2xl py-3.5 pl-4 pr-16 neu-input outline-none tracking-wide"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs md:text-sm font-black text-[#6B7280] pointer-events-none select-none tracking-normal">
+                    VNĐ
+                  </span>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustOriginalPrice(-100000)}
+                    className="h-12 w-12 rounded-2xl neu-btn flex items-center justify-center font-black text-lg text-[#6B7280] hover:text-[#E53E3E] cursor-pointer transition-colors active:scale-95"
+                    title="Giảm 100.000 VNĐ (Phím mũi tên Xuống)"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustOriginalPrice(100000)}
+                    className="h-12 w-12 rounded-2xl neu-btn flex items-center justify-center font-black text-lg text-[#6B7280] hover:text-[#6C63FF] cursor-pointer transition-colors active:scale-95"
+                    title="Tăng 100.000 VNĐ (Phím mũi tên Lên)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <p className="mt-1 text-[11px] text-[#6B7280] font-medium">
+                Giá niêm yết trước khi áp dụng chiết khấu / khuyến mãi
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <NeuInput
-              label="Số lượng tồn kho *"
-              type="number"
-              value={productForm.stock}
-              onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
-              required
-            />
-            <NeuInput
-              label="URL Hình ảnh"
-              value={productForm.image}
-              onChange={(e) => setProductForm({ ...productForm, image: e.target.value })}
-              placeholder="https://..."
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+            <div className="sm:col-span-1">
+              <NeuInput
+                label="Số lượng tồn kho *"
+                type="number"
+                min="0"
+                value={productForm.stock}
+                onChange={(e) => setProductForm({ ...productForm, stock: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                required
+              />
+            </div>
+
+            {/* KHU VỰC CHỌN VÀ NHẬP HÌNH ẢNH */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-[#6B7280]">
+                Hình ảnh sản phẩm
+              </label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={
+                      productForm.image.startsWith("data:image/")
+                        ? "Đã chọn ảnh từ máy tính (Định dạng Base64)"
+                        : productForm.image
+                    }
+                    onChange={(e) => {
+                      setProductForm({ ...productForm, image: e.target.value });
+                      setImagePreviewError(false);
+                    }}
+                    placeholder="Dán link ảnh https://... hoặc bấm nút bên cạnh"
+                    className="w-full bg-[#E0E5EC] text-[#3D4852] font-medium rounded-2xl py-3 pl-4 pr-12 text-sm neu-input outline-none"
+                  />
+                  {productForm.image && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProductForm({ ...productForm, image: "" });
+                        setImagePreviewError(false);
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#E53E3E] hover:underline cursor-pointer"
+                      title="Xóa ảnh hiện tại"
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+
+                {/* Input file ẩn từ máy tính */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageFileChange}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                <NeuButton
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="shrink-0 flex items-center justify-center gap-2 whitespace-nowrap text-xs font-bold"
+                >
+                  <Upload className="h-4 w-4 text-[#6C63FF]" />
+                  <span>Chọn ảnh từ máy tính</span>
+                </NeuButton>
+              </div>
+            </div>
+          </div>
+
+          {/* KHUNG XEM TRƯỚC HÌNH ẢNH (IMAGE PREVIEW) */}
+          <div className="rounded-2xl neu-inset p-4 bg-[#E0E5EC] flex items-center gap-4">
+            <div className="relative h-20 w-20 shrink-0 rounded-2xl overflow-hidden neu-extruded bg-[#E0E5EC] flex items-center justify-center">
+              {productForm.image.trim() && !imagePreviewError ? (
+                <img
+                  src={productForm.image.trim()}
+                  alt="Xem trước sản phẩm"
+                  className="h-full w-full object-cover transition-all duration-300"
+                  onError={() => setImagePreviewError(true)}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center p-1 text-center text-[#6B7280]">
+                  <ImageOff className="h-6 w-6 mb-1 opacity-60" />
+                  <span className="text-[10px] font-bold opacity-75">Chưa có ảnh</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-bold text-[#3D4852]">Xem trước ảnh sản phẩm</p>
+                {productForm.image.trim() && !imagePreviewError && (
+                  <NeuBadge variant="teal" className="text-[10px] py-0.5 px-2">
+                    {productForm.image.startsWith("data:image/") ? "Ảnh từ máy tính (Sẵn sàng)" : "URL Hợp lệ"}
+                  </NeuBadge>
+                )}
+              </div>
+              {imagePreviewError ? (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-[#E53E3E] font-medium">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>Link ảnh không hợp lệ hoặc không thể tải (sẽ tự động dùng ảnh mặc định khi lưu)</span>
+                </p>
+              ) : !productForm.image.trim() ? (
+                <p className="mt-1 text-xs text-[#6B7280] leading-relaxed">
+                  Chưa có ảnh. Bạn có thể dán link trực tuyến hoặc bấm <strong>"Chọn ảnh từ máy tính"</strong> (dung lượng &lt; 4MB). Khi để trống, hệ thống tự động gán ảnh chất lượng cao để tránh vỡ giao diện.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-[#38B2AC] font-medium truncate">
+                  {productForm.image.startsWith("data:image/")
+                    ? "Ảnh tải trực tiếp từ máy tính đã được chuyển đổi Base64 và sẵn sàng lưu vào hệ thống."
+                    : productForm.image.trim()}
+                </p>
+              )}
+            </div>
           </div>
 
           <div>

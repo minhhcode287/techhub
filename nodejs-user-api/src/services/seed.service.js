@@ -231,10 +231,138 @@ const seedProducts = async ({ force = false } = {}) => {
   }
 };
 
+/**
+ * Initial Demo Rental Bookings to ensure revenue reports and leaderboards have realistic data
+ */
+const now = new Date();
+const daysAgo = (n) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+
+const initialBookings = [
+  {
+    _id: "booking-demo-1",
+    id: "booking-demo-1",
+    userId: "demo-user-1",
+    userEmail: "customer@techhub.vn",
+    userName: "Khách Hàng TechHub",
+    userPhone: "0901234567",
+    cameraId: "cam-1",
+    cameraName: "Sony Alpha A7 IV (Body + 24-70mm F2.8 GM)",
+    cameraImage: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80",
+    startDate: daysAgo(5).toISOString().split("T")[0],
+    endDate: daysAgo(2).toISOString().split("T")[0],
+    totalDays: 3,
+    dailyRate: 450000,
+    rentalFee: 1350000,
+    depositAmount: 15000000,
+    totalAmount: 16350000,
+    idCardNumber: "079090123456",
+    status: "completed",
+    notes: "Khách thuê chụp sự kiện doanh nghiệp cuối tuần",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(2),
+  },
+  {
+    _id: "booking-demo-2",
+    id: "booking-demo-2",
+    userId: "demo-user-1",
+    userEmail: "customer@techhub.vn",
+    userName: "Khách Hàng TechHub",
+    userPhone: "0901234567",
+    cameraId: "cam-2",
+    cameraName: "Sony FX3 Cinema Line (Body + 24-105mm F4 G)",
+    cameraImage: "https://images.unsplash.com/photo-1502982720700-bfff97f2ecac?w=800&auto=format&fit=crop&q=80",
+    startDate: daysAgo(2).toISOString().split("T")[0],
+    endDate: daysAgo(0).toISOString().split("T")[0],
+    totalDays: 2,
+    dailyRate: 750000,
+    rentalFee: 1500000,
+    depositAmount: 25000000,
+    totalAmount: 26500000,
+    idCardNumber: "079090123456",
+    status: "active",
+    notes: "Quay MV ca nhạc ngoại cảnh",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(1),
+  },
+  {
+    _id: "booking-demo-3",
+    id: "booking-demo-3",
+    userId: "demo-user-2",
+    userEmail: "nguyenvanan@gmail.com",
+    userName: "Nguyễn Văn An",
+    userPhone: "0918889999",
+    cameraId: "cam-4",
+    cameraName: "Fujifilm X-T5 (Body + XF 16-55mm F2.8 R LM WR)",
+    cameraImage: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&auto=format&fit=crop&q=80",
+    startDate: daysAgo(3).toISOString().split("T")[0],
+    endDate: daysAgo(0).toISOString().split("T")[0],
+    totalDays: 3,
+    dailyRate: 350000,
+    rentalFee: 1050000,
+    depositAmount: 10000000,
+    totalAmount: 11050000,
+    idCardNumber: "079091888999",
+    status: "active",
+    notes: "Đi du lịch Đà Lạt chụp ảnh đường phố",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(1),
+  },
+  {
+    _id: "booking-demo-4",
+    id: "booking-demo-4",
+    userId: "demo-user-3",
+    userEmail: "tranquoctuan@gmail.com",
+    userName: "Trần Quốc Tuấn",
+    userPhone: "0933445566",
+    cameraId: "cam-3",
+    cameraName: "Canon EOS R5 (Body + RF 28-70mm F2L USM)",
+    cameraImage: "https://images.unsplash.com/photo-1512790182412-b19e6d62bc39?w=800&auto=format&fit=crop&q=80",
+    startDate: daysAgo(12).toISOString().split("T")[0],
+    endDate: daysAgo(8).toISOString().split("T")[0],
+    totalDays: 4,
+    dailyRate: 850000,
+    rentalFee: 3400000,
+    depositAmount: 28000000,
+    totalAmount: 31400000,
+    idCardNumber: "079093344556",
+    status: "completed",
+    notes: "Chụp lookbook thời trang thu đông",
+    createdAt: daysAgo(12),
+    updatedAt: daysAgo(8),
+  },
+];
+
+/**
+ * Seed initial rental bookings if they do not exist
+ */
+const seedBookingsIfEmpty = async () => {
+  try {
+    const RentalBooking = require("../models/RentalBooking.model");
+    const { getDBStatus } = require("../config/database");
+    const dbStatus = getDBStatus();
+    if (!dbStatus.connected) return;
+
+    const count = await RentalBooking.countDocuments();
+    if (count === 0) {
+      const bookingsToInsert = initialBookings.map(({ _id, ...rest }) => ({
+        ...rest,
+      }));
+      await RentalBooking.insertMany(bookingsToInsert);
+      console.log(`[SeedService] Đã khởi tạo ${initialBookings.length} đơn thuê mẫu vào MongoDB.`);
+    } else {
+      console.log(`[SeedService] MongoDB đã có sẵn ${count} đơn thuê máy ảnh.`);
+    }
+  } catch (err) {
+    console.warn("[SeedService] Booking seed warning:", err.message);
+  }
+};
+
 module.exports = {
   initialProducts,
   initialCameras,
   initialUsers,
+  initialBookings,
   seedUsersIfEmpty,
   seedProducts,
+  seedBookingsIfEmpty,
 };

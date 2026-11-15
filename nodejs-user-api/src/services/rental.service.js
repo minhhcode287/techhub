@@ -1,6 +1,6 @@
 const RentalCamera = require("../models/RentalCamera.model");
 const RentalBooking = require("../models/RentalBooking.model");
-const { initialCameras } = require("./seed.service");
+const { initialCameras, initialBookings, seedBookingsIfEmpty } = require("./seed.service");
 const { getDBStatus } = require("../config/database");
 
 let inMemoryCameras = initialCameras.map((c, idx) => ({
@@ -11,12 +11,14 @@ let inMemoryCameras = initialCameras.map((c, idx) => ({
   updatedAt: new Date(),
 }));
 
-let inMemoryBookings = [];
+let inMemoryBookings = Array.isArray(initialBookings)
+  ? initialBookings.map((b) => ({ ...b }))
+  : [];
 
 const seedIfEmpty = async () => {
   const dbStatus = getDBStatus();
   if (!dbStatus.connected) {
-    console.log(`[RentalService] In-Memory mode active with ${inMemoryCameras.length} initial cameras.`);
+    console.log(`[RentalService] In-Memory mode active with ${inMemoryCameras.length} initial cameras and ${inMemoryBookings.length} bookings.`);
     return;
   }
 
@@ -27,6 +29,10 @@ const seedIfEmpty = async () => {
       console.log(`[RentalService] Đã khởi tạo ${initialCameras.length} máy ảnh cho thuê vào MongoDB.`);
     } else {
       console.log(`[RentalService] MongoDB đã có sẵn ${count} máy ảnh cho thuê.`);
+    }
+
+    if (typeof seedBookingsIfEmpty === "function") {
+      await seedBookingsIfEmpty();
     }
   } catch (err) {
     console.warn("[RentalService] Seed error:", err.message);

@@ -19,13 +19,21 @@ export default function LoginPage() {
   // Real-time field errors
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
+  React.useEffect(() => {
+    const notice = sessionStorage.getItem("techhub_auth_notice");
+    if (notice) {
+      setError(notice);
+      sessionStorage.removeItem("techhub_auth_notice");
+    }
+  }, []);
+
   const validateForm = () => {
     const errs: { email?: string; password?: string } = {};
 
     if (!email.trim()) {
       errs.email = "Vui lòng nhập địa chỉ email";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.email = "Email không đúng định dạng (ví dụ: demo@techhub.vn)";
+      errs.email = "Email không đúng định dạng (ví dụ: customer@techhub.vn)";
     }
 
     if (!password) {
@@ -57,8 +65,8 @@ export default function LoginPage() {
   };
 
   const handleFillDemo = () => {
-    setEmail("demo@techhub.vn");
-    setPassword("123456");
+    setEmail("customer@techhub.vn");
+    setPassword("Test@123");
     setError(null);
     setFieldErrors({});
   };
@@ -119,7 +127,7 @@ export default function LoginPage() {
                 if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: undefined });
               }}
               error={fieldErrors.email}
-              placeholder="demo@techhub.vn"
+              placeholder="customer@techhub.vn"
               icon={<Mail className="h-4 w-4" />}
             />
 

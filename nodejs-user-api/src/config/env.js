@@ -8,7 +8,7 @@ const env = {
     process.env.JWT_ACCESS_SECRET ||
     process.env.JWT_SECRET ||
     "techhub_access_token_super_secret_key_2025",
-  JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || "15m",
+  JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || "7d",
   JWT_REFRESH_SECRET:
     process.env.JWT_REFRESH_SECRET ||
     "techhub_refresh_token_super_secret_key_2025",

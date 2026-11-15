@@ -7,6 +7,31 @@ const orderService = require("./order.service");
 const productService = require("./product.service");
 const rentalService = require("./rental.service");
 
+/**
+ * Robust helper to extract pure rental fee from a booking,
+ * handling rentalFee, totalPrice, or (totalAmount - depositAmount).
+ */
+const getBookingRentalFee = (booking) => {
+  if (!booking) return 0;
+  if (booking.rentalFee != null && !isNaN(Number(booking.rentalFee))) {
+    return Number(booking.rentalFee);
+  }
+  if (booking.totalPrice != null && !isNaN(Number(booking.totalPrice))) {
+    return Number(booking.totalPrice);
+  }
+  if (booking.totalAmount != null && !isNaN(Number(booking.totalAmount))) {
+    const deposit = Number(booking.depositAmount) || 0;
+    const fee = Number(booking.totalAmount) - deposit;
+    if (fee > 0) return fee;
+  }
+  if (booking.dailyRate && booking.totalDays) {
+    const days = Number(booking.totalDays) || 1;
+    const rate = Number(booking.dailyRate) || 0;
+    return days >= 7 ? Math.floor(rate * days * 0.85) : rate * days;
+  }
+  return 0;
+};
+
 /* -------------------------------------------------------------------------- */
 /*                          1. PERSONNEL (STAFF & CUSTOMERS)                   */
 /* -------------------------------------------------------------------------- */
@@ -175,7 +200,7 @@ const getCustomersList = async () => {
     );
 
     const totalSpentRetail = userOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
-    const totalSpentRental = userBookings.reduce((sum, b) => sum + (Number(b.totalPrice) || 0), 0);
+    const totalSpentRental = userBookings.reduce((sum, b) => sum + getBookingRentalFee(b), 0);
 
     return {
       ...cust,
@@ -195,19 +220,25 @@ const getCustomersList = async () => {
 /* -------------------------------------------------------------------------- */
 
 const getInventoryReport = async () => {
-  const [products, cameras] = await Promise.all([
+  const [products, cameras, bookings] = await Promise.all([
     productService.getAllProducts(),
     rentalService.getAllCameras(),
+    rentalService.getAllBookings(),
   ]);
 
   const totalRetailUnits = products.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
   const lowStockProducts = products.filter((p) => (Number(p.stock) || 0) <= 5 && (Number(p.stock) || 0) > 0);
   const outOfStockProducts = products.filter((p) => (Number(p.stock) || 0) <= 0);
 
+  const activeBookingsCount = bookings.filter((b) => {
+    const s = (b.status || "").toLowerCase();
+    return s === "active" || s === "confirmed";
+  }).length;
+  const statusRentedCount = cameras.filter((c) => c.status === "rented_out" || c.status === "rented" || c.status === "active").length;
   const totalCameraUnits = cameras.length;
-  const availableCameras = cameras.filter((c) => c.status === "available" || !c.status).length;
-  const rentedCameras = cameras.filter((c) => c.status === "rented").length;
+  const rentedCameras = Math.min(totalCameraUnits, Math.max(statusRentedCount, activeBookingsCount));
   const maintenanceCameras = cameras.filter((c) => c.status === "maintenance").length;
+  const availableCameras = Math.max(0, totalCameraUnits - rentedCameras - maintenanceCameras);
 
   return {
     retailSummary: {
@@ -270,15 +301,25 @@ const getRevenueReport = async ({ period = "30days", type = "all" } = {}) => {
   });
 
   const retailRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
-  const rentalRevenue = filteredBookings.reduce((sum, b) => sum + (Number(b.totalPrice) || 0), 0);
+  const rentalRevenue = filteredBookings.reduce((sum, b) => sum + getBookingRentalFee(b), 0);
 
   let totalRevenue = 0;
-  if (type === "retail") totalRevenue = retailRevenue;
-  else if (type === "rental") totalRevenue = rentalRevenue;
-  else totalRevenue = retailRevenue + rentalRevenue;
+  let totalTransactions = 0;
+  let averageOrderValue = 0;
 
-  const totalTransactions = filteredOrders.length + filteredBookings.length;
-  const averageOrderValue = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+  if (type === "retail") {
+    totalRevenue = retailRevenue;
+    totalTransactions = filteredOrders.length;
+    averageOrderValue = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+  } else if (type === "rental") {
+    totalRevenue = rentalRevenue;
+    totalTransactions = filteredBookings.length;
+    averageOrderValue = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+  } else {
+    totalRevenue = retailRevenue + rentalRevenue;
+    totalTransactions = filteredOrders.length + filteredBookings.length;
+    averageOrderValue = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+  }
 
   // Generate trend points for daily revenue (last 7 or 14 points)
   const daysMap = {};
@@ -294,8 +335,9 @@ const getRevenueReport = async ({ period = "30days", type = "all" } = {}) => {
     const d = new Date(o.createdAt || Date.now());
     const key = `${d.getDate()}/${d.getMonth() + 1}`;
     if (daysMap[key]) {
-      daysMap[key].retail += Number(o.totalAmount) || 0;
-      daysMap[key].total += Number(o.totalAmount) || 0;
+      const amt = Number(o.totalAmount) || 0;
+      daysMap[key].retail += amt;
+      daysMap[key].total += amt;
     }
   });
 
@@ -303,8 +345,9 @@ const getRevenueReport = async ({ period = "30days", type = "all" } = {}) => {
     const d = new Date(b.createdAt || Date.now());
     const key = `${d.getDate()}/${d.getMonth() + 1}`;
     if (daysMap[key]) {
-      daysMap[key].rental += Number(b.totalPrice) || 0;
-      daysMap[key].total += Number(b.totalPrice) || 0;
+      const fee = getBookingRentalFee(b);
+      daysMap[key].rental += fee;
+      daysMap[key].total += fee;
     }
   });
 
@@ -372,20 +415,20 @@ const getTopPerformingReports = async () => {
     if ((booking.status || "").toLowerCase() === "cancelled") return;
     const camId = booking.cameraId || booking.cameraName;
     if (!cameraMap[camId]) {
-      const camDoc = cameras.find((c) => c.id === camId || c._id === camId);
+      const camDoc = cameras.find((c) => c.id === camId || c._id === camId || String(c._id) === String(camId));
       cameraMap[camId] = {
         id: camId,
         name: booking.cameraName || (camDoc ? camDoc.name : "Máy ảnh"),
         brand: camDoc ? camDoc.brand : "Sony",
-        image: camDoc ? camDoc.image : "",
+        image: booking.cameraImage || (camDoc ? camDoc.image : ""),
         rentalCount: 0,
         totalRentalRevenue: 0,
         totalRentalDays: 0,
       };
     }
     cameraMap[camId].rentalCount += 1;
-    cameraMap[camId].totalRentalRevenue += Number(booking.totalPrice) || 0;
-    cameraMap[camId].totalRentalDays += Number(booking.rentalDays) || 1;
+    cameraMap[camId].totalRentalRevenue += getBookingRentalFee(booking);
+    cameraMap[camId].totalRentalDays += Number(booking.totalDays || booking.rentalDays || 1);
   });
 
   const topRentedCameras = Object.values(cameraMap)

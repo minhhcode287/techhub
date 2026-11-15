@@ -300,8 +300,10 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* HERO BANNER */}
-      <section className="relative overflow-hidden py-16 md:py-20">
+      {/* MAIN CONTAINER */}
+      <main className="flex-1 pt-24 md:pt-28">
+        {/* HERO BANNER */}
+        <section className="relative overflow-hidden py-16 md:py-20">
         {/* Ambient Neumorphic Background Circles */}
         <div className="absolute -top-12 -right-12 h-96 w-96 rounded-full neu-inset-deep opacity-40 animate-float-slow pointer-events-none" />
         <div className="absolute top-1/2 -left-20 h-80 w-80 rounded-full neu-extruded opacity-50 animate-float pointer-events-none" />
@@ -744,6 +746,7 @@ export default function HomePage() {
           </div>
         )}
       </section>
+      </main>
 
       {/* MODAL: MUA SẢN PHẨM CÔNG NGHỆ */}
       <NeuModal

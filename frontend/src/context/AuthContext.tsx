@@ -30,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (err: unknown) {
           console.warn("Token expired or invalid:", err);
           localStorage.removeItem("techhub_token");
+          localStorage.removeItem("techhub_refresh_token");
           setToken(null);
           setUser(null);
         }
@@ -38,13 +39,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     fetchUser();
+
+    // Lắng nghe sự kiện hết hạn token từ api wrapper
+    const handleAuthExpired = () => {
+      setUser(null);
+      setToken(null);
+    };
+    window.addEventListener("techhub:auth_expired", handleAuthExpired);
+    return () => window.removeEventListener("techhub:auth_expired", handleAuthExpired);
   }, []);
 
   const login = async (email: string, password: string) => {
     const res = await api.login({ email, password });
     if (res.success && res.data) {
-      localStorage.setItem("techhub_token", res.data.token);
-      setToken(res.data.token);
+      const accessToken =
+        res.data.accessToken || res.data.token || res.data.tokens?.accessToken;
+      const refreshToken =
+        res.data.refreshToken || res.data.tokens?.refreshToken;
+
+      if (accessToken) {
+        localStorage.setItem("techhub_token", accessToken);
+        setToken(accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem("techhub_refresh_token", refreshToken);
+      }
       setUser(res.data.user);
     }
   };
@@ -52,14 +71,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (data: { name: string; email: string; password: string; phone?: string; address?: string }) => {
     const res = await api.register(data);
     if (res.success && res.data) {
-      localStorage.setItem("techhub_token", res.data.token);
-      setToken(res.data.token);
+      const accessToken =
+        res.data.accessToken || res.data.token || res.data.tokens?.accessToken;
+      const refreshToken =
+        res.data.refreshToken || res.data.tokens?.refreshToken;
+
+      if (accessToken) {
+        localStorage.setItem("techhub_token", accessToken);
+        setToken(accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem("techhub_refresh_token", refreshToken);
+      }
       setUser(res.data.user);
     }
   };
 
   const logout = () => {
     localStorage.removeItem("techhub_token");
+    localStorage.removeItem("techhub_refresh_token");
     setToken(null);
     setUser(null);
   };

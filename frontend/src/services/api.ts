@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API_BASE = "/api";
 export interface User {
   id: string;
   name: string;
@@ -95,7 +95,32 @@ export interface Order {
 
 export type Booking = RentalBooking;
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+let isRefreshing = false;
+let refreshSubscribers: ((newToken: string) => void)[] = [];
+
+function onTokenRefreshed(newToken: string) {
+  refreshSubscribers.forEach((cb) => cb(newToken));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (newToken: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
+function handleSessionExpired() {
+  localStorage.removeItem("techhub_token");
+  localStorage.removeItem("techhub_refresh_token");
+  window.dispatchEvent(new CustomEvent("techhub:auth_expired"));
+  if (!window.location.pathname.includes("/login")) {
+    sessionStorage.setItem(
+      "techhub_auth_notice",
+      "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại."
+    );
+    window.location.href = "/login";
+  }
+}
+
+async function request<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const token = localStorage.getItem("techhub_token");
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -113,6 +138,82 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   const data = await response.json().catch(() => ({}));
 
+  // Kiểm tra HTTP 401 hoặc thông báo token hết hạn
+  const isTokenExpired =
+    response.status === 401 ||
+    (data &&
+      typeof data.message === "string" &&
+      (data.message.includes("hết hạn") || data.message.includes("TokenExpiredError")));
+
+  const isAuthEndpoint =
+    endpoint.includes("/auth/login") ||
+    endpoint.includes("/auth/register") ||
+    endpoint.includes("/auth/refresh-token");
+
+  if (isTokenExpired && !isRetry && !isAuthEndpoint) {
+    const refreshToken = localStorage.getItem("techhub_refresh_token");
+
+    if (!refreshToken) {
+      handleSessionExpired();
+      throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.");
+    }
+
+    if (isRefreshing) {
+      return new Promise<T>((resolve, reject) => {
+        addRefreshSubscriber((newToken: string) => {
+          const newHeaders = {
+            ...headers,
+            Authorization: `Bearer ${newToken}`,
+          };
+          request<T>(endpoint, { ...options, headers: newHeaders }, true)
+            .then(resolve)
+            .catch(reject);
+        });
+      });
+    }
+
+    isRefreshing = true;
+
+    try {
+      const refreshRes = await fetch(`${API_BASE}/auth/refresh-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const refreshData = await refreshRes.json().catch(() => ({}));
+
+      if (!refreshRes.ok || !refreshData.success || !refreshData.data) {
+        throw new Error(refreshData.message || "Cấp lại token thất bại");
+      }
+
+      const newAccessToken =
+        refreshData.data.accessToken || refreshData.data.token;
+      const newRefreshToken = refreshData.data.refreshToken;
+
+      if (newAccessToken) {
+        localStorage.setItem("techhub_token", newAccessToken);
+      }
+      if (newRefreshToken) {
+        localStorage.setItem("techhub_refresh_token", newRefreshToken);
+      }
+
+      isRefreshing = false;
+      onTokenRefreshed(newAccessToken);
+
+      const newHeaders = {
+        ...headers,
+        Authorization: `Bearer ${newAccessToken}`,
+      };
+      return request<T>(endpoint, { ...options, headers: newHeaders }, true);
+    } catch (refreshErr) {
+      isRefreshing = false;
+      refreshSubscribers = [];
+      handleSessionExpired();
+      throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.");
+    }
+  }
+
   if (!response.ok) {
     throw new Error(data.message || `Lỗi yêu cầu: ${response.statusText}`);
   }
@@ -126,15 +227,49 @@ export const api = {
 
   // Auth
   register: (payload: { name: string; email: string; password: string; phone?: string; address?: string }) =>
-    request<{ success: boolean; message: string; data: { user: User; token: string } }>("/auth/register", {
+    request<{
+      success: boolean;
+      message: string;
+      data: {
+        user: User;
+        token: string;
+        accessToken?: string;
+        refreshToken?: string;
+        tokens?: { accessToken: string; refreshToken: string };
+      };
+    }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
 
   login: (payload: { email: string; password: string }) =>
-    request<{ success: boolean; message: string; data: { user: User; token: string } }>("/auth/login", {
+    request<{
+      success: boolean;
+      message: string;
+      data: {
+        user: User;
+        token: string;
+        accessToken?: string;
+        refreshToken?: string;
+        tokens?: { accessToken: string; refreshToken: string };
+      };
+    }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+
+  refreshToken: (refreshToken: string) =>
+    request<{
+      success: boolean;
+      message: string;
+      data: {
+        accessToken: string;
+        refreshToken: string;
+        token: string;
+      };
+    }>("/auth/refresh-token", {
+      method: "POST",
+      body: JSON.stringify({ refreshToken }),
     }),
 
   getMe: () => request<{ success: boolean; data: User }>("/auth/me"),
