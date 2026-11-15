@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
-import { api, type Product, type RentalCamera } from "../services/api";
+import { api, type Product, type RentalCamera, type Voucher } from "../services/api";
 import SEO from "../components/SEO";
 import {
   Camera,
@@ -15,6 +15,10 @@ import {
   Truck,
   RotateCcw,
   ShoppingCart,
+  Tag,
+  Coins,
+  Gift,
+  X,
 } from "lucide-react";
 import {
   NeuNavbar,
@@ -28,6 +32,7 @@ import {
   NeuSkeleton,
   NeuEmptyState,
 } from "../components/NeumorphicComponents";
+import PaymentQRCard from "../components/PaymentQRCard";
 
 // Cấu hình hình ảnh sản phẩm nổi bật trên Hero Card (Dễ dàng thay đổi link hoặc upload ảnh mới)
 const HERO_SHOWCASE_IMAGES = {
@@ -38,7 +43,7 @@ const HERO_SHOWCASE_IMAGES = {
 };
 
 export default function HomePage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { addToCart } = useCart();
 
   // Active Catalog Tab
@@ -65,6 +70,19 @@ export default function HomePage() {
   const [ordering, setOrdering] = useState<boolean>(false);
   const [buyErrors, setBuyErrors] = useState<{ phone?: string; address?: string }>({});
 
+  // Quick Buy Voucher & Loyalty Points State
+  const [availableVouchers, setAvailableVouchers] = useState<Voucher[]>([]);
+  const [voucherInput, setVoucherInput] = useState<string>("");
+  const [appliedVoucher, setAppliedVoucher] = useState<Voucher | null>(null);
+  const [voucherDiscount, setVoucherDiscount] = useState<number>(0);
+  const [validatingVoucher, setValidatingVoucher] = useState<boolean>(false);
+  const [voucherMessage, setVoucherMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const userPoints = user?.points || 0;
+  const [pointsInput, setPointsInput] = useState<string>("");
+  const [pointsToUse, setPointsToUse] = useState<number>(0);
+  const [isUseMaxPoints, setIsUseMaxPoints] = useState<boolean>(false);
+
   // Rental Booking Modal State
   const [selectedCamera, setSelectedCamera] = useState<RentalCamera | null>(null);
   const [rentalStartDate, setRentalStartDate] = useState<string>(
@@ -77,6 +95,7 @@ export default function HomePage() {
   const [rentalName, setRentalName] = useState<string>(user?.name || "");
   const [rentalPhone, setRentalPhone] = useState<string>(user?.phone || "");
   const [rentalNotes, setRentalNotes] = useState<string>("");
+  const [rentalPaymentMethod, setRentalPaymentMethod] = useState<"cod" | "banking" | "momo">("cod");
   const [bookingLoading, setBookingLoading] = useState<boolean>(false);
   const [rentalErrors, setRentalErrors] = useState<{ idCard?: string; phone?: string }>({});
 
@@ -133,8 +152,157 @@ export default function HomePage() {
     fetchCameras();
   }, [fetchCameras]);
 
+  useEffect(() => {
+    const fetchVouchers = async () => {
+      try {
+        const res = await api.getVouchers();
+        if (res.success && res.data) {
+          setAvailableVouchers(res.data);
+        }
+      } catch (err) {
+        console.warn("Could not load active vouchers:", err);
+      }
+    };
+    fetchVouchers();
+  }, []);
+
   const formatVND = (amount: number) => {
     return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
+  };
+
+  // Quick Buy Financial Computations
+  const buySubtotal = selectedProduct ? selectedProduct.price * buyQty : 0;
+  const maxPointsDiscount = Math.max(0, buySubtotal - voucherDiscount);
+  const maxPointsCanUse = Math.min(userPoints, Math.floor(maxPointsDiscount / 10000));
+  const pointsDiscount = pointsToUse * 10000;
+  const buyFinalTotal = Math.max(0, buySubtotal - voucherDiscount - pointsDiscount);
+  const calculatedEarnedPoints = Math.floor(buyFinalTotal / 100000);
+
+  const handleOpenQuickBuy = (item: Product) => {
+    setSelectedProduct(item);
+    setBuyQty(1);
+    setBuyErrors({});
+    setAppliedVoucher(null);
+    setVoucherDiscount(0);
+    setVoucherInput("");
+    setVoucherMessage(null);
+    setPointsToUse(0);
+    setPointsInput("");
+    setIsUseMaxPoints(false);
+  };
+
+  const handleAdjustBuyQty = (newQty: number) => {
+    const validQty = Math.max(1, newQty);
+    setBuyQty(validQty);
+    const newSubtotal = selectedProduct ? selectedProduct.price * validQty : 0;
+
+    if (appliedVoucher) {
+      if (appliedVoucher.minOrderValue && newSubtotal < appliedVoucher.minOrderValue) {
+        setVoucherMessage({
+          type: "error",
+          text: `Đơn hàng chưa đạt ${formatVND(appliedVoucher.minOrderValue)} để áp dụng mã ${appliedVoucher.code}`,
+        });
+        setAppliedVoucher(null);
+        setVoucherDiscount(0);
+      } else if (appliedVoucher.discountType === "percent") {
+        let disc = Math.round(newSubtotal * (appliedVoucher.discountValue / 100));
+        if (appliedVoucher.maxDiscount && appliedVoucher.maxDiscount > 0) {
+          disc = Math.min(disc, appliedVoucher.maxDiscount);
+        }
+        setVoucherDiscount(disc);
+      }
+    }
+
+    // Giới hạn lại số điểm dùng theo subtotal mới
+    const currentVoucherDisc = appliedVoucher ? voucherDiscount : 0;
+    const remainingAfterVoucher = Math.max(0, newSubtotal - currentVoucherDisc);
+    const newMaxPoints = Math.min(userPoints, Math.floor(remainingAfterVoucher / 10000));
+    if (pointsToUse > newMaxPoints) {
+      setPointsToUse(newMaxPoints);
+      setPointsInput(newMaxPoints > 0 ? String(newMaxPoints) : "");
+      if (newMaxPoints === 0) setIsUseMaxPoints(false);
+    }
+  };
+
+  const handleApplyVoucher = async (codeToApply?: string) => {
+    const code = (codeToApply || voucherInput).trim().toUpperCase();
+    if (!code) {
+      setVoucherMessage({ type: "error", text: "Vui lòng nhập mã ưu đãi" });
+      return;
+    }
+    try {
+      setValidatingVoucher(true);
+      setVoucherMessage(null);
+      const res = await api.validateVoucher({ code, orderTotal: buySubtotal });
+      if (res.success && res.data?.isValid) {
+        setAppliedVoucher(
+          res.data.voucher ||
+            ({
+              code,
+              discountType: "fixed",
+              discountValue: res.data.discountAmount,
+            } as Voucher)
+        );
+        setVoucherDiscount(res.data.discountAmount);
+        setVoucherMessage({
+          type: "success",
+          text: res.message || `Áp dụng mã ${code} thành công: Giảm ${formatVND(res.data.discountAmount)}`,
+        });
+        setVoucherInput(code);
+
+        const remaining = Math.max(0, buySubtotal - res.data.discountAmount);
+        const newMaxPoints = Math.min(userPoints, Math.floor(remaining / 10000));
+        if (pointsToUse > newMaxPoints) {
+          setPointsToUse(newMaxPoints);
+          setPointsInput(newMaxPoints > 0 ? String(newMaxPoints) : "");
+          if (newMaxPoints === 0) setIsUseMaxPoints(false);
+        }
+      } else {
+        setVoucherMessage({
+          type: "error",
+          text: res.message || "Mã không hợp lệ hoặc chưa đủ điều kiện áp dụng",
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Lỗi khi kiểm tra mã ưu đãi";
+      setVoucherMessage({ type: "error", text: msg });
+    } finally {
+      setValidatingVoucher(false);
+    }
+  };
+
+  const handleRemoveVoucher = () => {
+    setAppliedVoucher(null);
+    setVoucherDiscount(0);
+    setVoucherInput("");
+    setVoucherMessage(null);
+  };
+
+  const handleToggleMaxPoints = () => {
+    if (isUseMaxPoints) {
+      setIsUseMaxPoints(false);
+      setPointsToUse(0);
+      setPointsInput("");
+    } else {
+      setIsUseMaxPoints(true);
+      setPointsToUse(maxPointsCanUse);
+      setPointsInput(String(maxPointsCanUse));
+    }
+  };
+
+  const handlePointsInputChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    if (!clean) {
+      setPointsInput("");
+      setPointsToUse(0);
+      setIsUseMaxPoints(false);
+      return;
+    }
+    let num = parseInt(clean, 10);
+    if (num > maxPointsCanUse) num = maxPointsCanUse;
+    setPointsInput(String(num));
+    setPointsToUse(num);
+    setIsUseMaxPoints(num === maxPointsCanUse && maxPointsCanUse > 0);
   };
 
   // Submit Order with validation
@@ -163,6 +331,8 @@ export default function HomePage() {
         customerPhone: buyPhone,
         shippingAddress: buyAddress,
         paymentMethod: buyPaymentMethod,
+        voucherCode: appliedVoucher ? appliedVoucher.code : (voucherInput.trim() ? voucherInput.trim().toUpperCase() : undefined),
+        pointsToUse,
         items: [
           {
             productId: selectedProduct._id,
@@ -174,9 +344,13 @@ export default function HomePage() {
         ],
       });
 
+      if (typeof refreshUser === "function") {
+        await refreshUser();
+      }
+
       setSelectedProduct(null);
       setToast({
-        message: `Đặt hàng thành công sản phẩm "${selectedProduct.name}"!`,
+        message: `Đặt hàng thành công sản phẩm "${selectedProduct.name}"! +${calculatedEarnedPoints} điểm tích lũy.`,
         linkText: "Xem đơn hàng của bạn",
         linkTo: "/account",
       });
@@ -579,11 +753,7 @@ export default function HomePage() {
                         <NeuButton
                           variant="primary"
                           size="md"
-                          onClick={() => {
-                            setSelectedProduct(item);
-                            setBuyQty(1);
-                            setBuyErrors({});
-                          }}
+                          onClick={() => handleOpenQuickBuy(item)}
                         >
                           Mua ngay
                         </NeuButton>
@@ -753,83 +923,259 @@ export default function HomePage() {
         isOpen={!!selectedProduct}
         onClose={() => setSelectedProduct(null)}
         title="Xác nhận đặt mua sản phẩm"
-        subtitle="Vui lòng kiểm tra kỹ thông tin đơn hàng và địa chỉ nhận hàng"
-        maxWidth="lg"
+        subtitle="Vui lòng kiểm tra kỹ thông tin đơn hàng, mã giảm giá và địa chỉ nhận hàng"
+        maxWidth="xl"
         id="buy-product-modal"
       >
         {selectedProduct && (
-          <form onSubmit={handleCreateOrder} className="space-y-4">
-            {/* Product preview */}
-            <div className="flex items-center gap-4 rounded-2xl neu-inset p-3 bg-[#E0E5EC]">
-              <img
-                src={selectedProduct.image}
-                alt={selectedProduct.name}
-                className="h-16 w-16 rounded-xl object-cover"
-              />
-              <div className="flex-1">
-                <h4 className="font-extrabold text-sm text-[#3D4852]">{selectedProduct.name}</h4>
-                <p className="text-xs text-[#6C63FF] font-black mt-0.5">
-                  {formatVND(selectedProduct.price)}
-                </p>
+          <form onSubmit={handleCreateOrder} className="space-y-5">
+            {/* 1. PRODUCT PREVIEW & QUANTITY */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl neu-inset p-4 bg-[#E0E5EC]">
+              <div className="flex items-center gap-3">
+                <img
+                  src={selectedProduct.image}
+                  alt={selectedProduct.name}
+                  className="h-16 w-16 rounded-2xl object-cover shrink-0 neu-extruded"
+                />
+                <div>
+                  <h4 className="font-extrabold text-sm text-[#3D4852] line-clamp-1">{selectedProduct.name}</h4>
+                  <p className="text-xs text-[#6C63FF] font-black mt-0.5">
+                    Đơn giá: {formatVND(selectedProduct.price)}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-2 neu-extruded-sm rounded-xl p-1 bg-[#E0E5EC]">
-                <button
-                  type="button"
-                  onClick={() => setBuyQty(Math.max(1, buyQty - 1))}
-                  className="h-7 w-7 rounded-lg text-xs font-bold hover:neu-inset-sm cursor-pointer"
-                >
-                  -
-                </button>
-                <span className="text-xs font-bold text-[#3D4852] px-1">{buyQty}</span>
-                <button
-                  type="button"
-                  onClick={() => setBuyQty(buyQty + 1)}
-                  className="h-7 w-7 rounded-lg text-xs font-bold hover:neu-inset-sm cursor-pointer"
-                >
-                  +
-                </button>
+
+              <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-none border-[#D1D9E6]/60 pt-2 sm:pt-0">
+                <span className="text-xs text-[#6B7280] font-bold sm:hidden">Số lượng:</span>
+                <div className="flex items-center gap-2 neu-extruded-sm rounded-xl p-1 bg-[#E0E5EC]">
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustBuyQty(buyQty - 1)}
+                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                  >
+                    -
+                  </button>
+                  <span className="text-xs font-extrabold text-[#3D4852] px-2">{buyQty}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustBuyQty(buyQty + 1)}
+                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Customer info */}
-            <NeuInput
-              id="modal-buy-name"
-              label="Họ tên người nhận *"
-              type="text"
-              required
-              value={buyName}
-              onChange={(e) => setBuyName(e.target.value)}
-              placeholder="Nguyễn Văn A"
-            />
+            {/* 2. VOUCHER / PROMO CODE SECTION */}
+            <div className="rounded-2xl neu-card p-4 space-y-3 bg-[#E0E5EC]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-[#6C63FF]" />
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#3D4852]">
+                    Mã ưu đãi / Khuyến mãi
+                  </span>
+                </div>
+                {appliedVoucher && (
+                  <NeuBadge variant="teal" className="text-[11px] py-0.5 px-2">
+                    Đã áp dụng mã {appliedVoucher.code}
+                  </NeuBadge>
+                )}
+              </div>
 
-            <NeuInput
-              id="modal-buy-phone"
-              label="Số điện thoại giao hàng *"
-              type="tel"
-              required
-              value={buyPhone}
-              onChange={(e) => {
-                setBuyPhone(e.target.value);
-                if (buyErrors.phone) setBuyErrors({ ...buyErrors, phone: undefined });
-              }}
-              error={buyErrors.phone}
-              placeholder="0987654321"
-            />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={voucherInput}
+                    onChange={(e) => setVoucherInput(e.target.value.toUpperCase().replace(/\s+/g, ""))}
+                    placeholder="Nhập mã giảm giá (VD: TECHHUB200K)..."
+                    className="w-full bg-[#E0E5EC] text-[#3D4852] font-bold rounded-2xl py-2.5 pl-4 pr-10 text-xs neu-input outline-none uppercase placeholder:normal-case"
+                  />
+                  {voucherInput && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveVoucher}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#E53E3E] hover:opacity-80 p-1"
+                      title="Xóa mã"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <NeuButton
+                  type="button"
+                  variant={appliedVoucher ? "secondary" : "primary"}
+                  size="sm"
+                  onClick={() => handleApplyVoucher()}
+                  loading={validatingVoucher}
+                  disabled={validatingVoucher || !voucherInput.trim()}
+                  className="shrink-0 text-xs font-bold"
+                >
+                  {appliedVoucher ? "Đổi mã" : "Áp dụng"}
+                </NeuButton>
+              </div>
 
-            <NeuInput
-              id="modal-buy-address"
-              label="Địa chỉ nhận hàng *"
-              type="text"
-              required
-              value={buyAddress}
-              onChange={(e) => {
-                setBuyAddress(e.target.value);
-                if (buyErrors.address) setBuyErrors({ ...buyErrors, address: undefined });
-              }}
-              error={buyErrors.address}
-              placeholder="Địa chỉ số nhà, đường, Phường/Xã, Quận/Huyện..."
-            />
+              {voucherMessage && (
+                <p
+                  className={`text-xs font-bold flex items-center gap-1.5 ${
+                    voucherMessage.type === "success" ? "text-[#38B2AC]" : "text-[#E53E3E]"
+                  }`}
+                >
+                  {voucherMessage.type === "success" ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <span className="shrink-0">⚠️</span>
+                  )}
+                  {voucherMessage.text}
+                </p>
+              )}
 
+              {/* Quick voucher suggestions */}
+              {availableVouchers.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-[11px] font-bold text-[#6B7280] mb-2 flex items-center gap-1">
+                    <Gift className="h-3 w-3 text-[#6C63FF]" /> Mã giảm giá khả dụng:
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {availableVouchers.map((v) => {
+                      const isSelected = appliedVoucher?.code === v.code;
+                      const isEligible = !v.minOrderValue || buySubtotal >= v.minOrderValue;
+
+                      return (
+                        <button
+                          key={v._id}
+                          type="button"
+                          onClick={() => {
+                            setVoucherInput(v.code);
+                            handleApplyVoucher(v.code);
+                          }}
+                          className={`shrink-0 text-left p-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                            isSelected
+                              ? "neu-accent font-bold"
+                              : isEligible
+                              ? "neu-btn text-[#3D4852] hover:border-[#6C63FF]"
+                              : "opacity-60 neu-inset-sm text-[#9CA3AF]"
+                          }`}
+                        >
+                          <div className="font-mono font-extrabold text-[#6C63FF]">{v.code}</div>
+                          <div className="text-[10px] text-[#6B7280] mt-0.5">
+                            {v.discountType === "percent" ? `Giảm ${v.discountValue}%` : `Giảm ${formatVND(v.discountValue)}`}
+                          </div>
+                          {v.minOrderValue > 0 && (
+                            <div className="text-[9px] text-[#9CA3AF]">Đơn từ {formatVND(v.minOrderValue)}</div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. LOYALTY POINTS SECTION */}
+            <div className="rounded-2xl neu-card p-4 space-y-3 bg-[#E0E5EC]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[#F6AD55]" />
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#3D4852]">
+                    Điểm thưởng thành viên
+                  </span>
+                </div>
+                <span className="text-xs font-extrabold text-[#6C63FF] neu-inset-sm px-2.5 py-1 rounded-xl">
+                  ★ {userPoints} điểm (~ {formatVND(userPoints * 10000)})
+                </span>
+              </div>
+
+              {userPoints > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={pointsInput}
+                        onChange={(e) => handlePointsInputChange(e.target.value)}
+                        placeholder={`Tối đa có thể dùng: ${maxPointsCanUse} điểm`}
+                        className="w-full bg-[#E0E5EC] text-[#3D4852] font-bold rounded-2xl py-2.5 pl-4 pr-14 text-xs neu-input outline-none"
+                      />
+                      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-extrabold text-[#6B7280] pointer-events-none">
+                        điểm
+                      </span>
+                    </div>
+
+                    <NeuButton
+                      type="button"
+                      variant={isUseMaxPoints ? "secondary" : "teal"}
+                      size="sm"
+                      onClick={handleToggleMaxPoints}
+                      disabled={maxPointsCanUse <= 0}
+                      className="shrink-0 text-xs font-bold whitespace-nowrap"
+                    >
+                      {isUseMaxPoints ? "Hủy dùng" : "Dùng tối đa"}
+                    </NeuButton>
+                  </div>
+
+                  {pointsToUse > 0 && (
+                    <p className="text-xs font-bold text-[#38B2AC] flex items-center gap-1.5">
+                      <Coins className="h-3.5 w-3.5" />
+                      Quy đổi giảm: -{formatVND(pointsDiscount)} (1 điểm = 10.000 VNĐ)
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-[#6B7280] font-medium leading-relaxed">
+                  {user
+                    ? "Bạn chưa có điểm thưởng. Mỗi 100.000 VNĐ thanh toán đơn này sẽ được tích lũy 1 điểm thưởng cho lần mua sau."
+                    : "Đăng nhập tài khoản để tích lũy và đổi điểm thưởng giảm giá trực tiếp vào đơn hàng."}
+                </p>
+              )}
+            </div>
+
+            {/* 4. CUSTOMER INFO */}
+            <div className="space-y-3">
+              <NeuInput
+                id="modal-buy-name"
+                label="Họ tên người nhận *"
+                type="text"
+                required
+                value={buyName}
+                onChange={(e) => setBuyName(e.target.value)}
+                placeholder="Nguyễn Văn A"
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <NeuInput
+                  id="modal-buy-phone"
+                  label="Số điện thoại giao hàng *"
+                  type="tel"
+                  required
+                  value={buyPhone}
+                  onChange={(e) => {
+                    setBuyPhone(e.target.value);
+                    if (buyErrors.phone) setBuyErrors({ ...buyErrors, phone: undefined });
+                  }}
+                  error={buyErrors.phone}
+                  placeholder="0987654321"
+                />
+
+                <NeuInput
+                  id="modal-buy-address"
+                  label="Địa chỉ nhận hàng *"
+                  type="text"
+                  required
+                  value={buyAddress}
+                  onChange={(e) => {
+                    setBuyAddress(e.target.value);
+                    if (buyErrors.address) setBuyErrors({ ...buyErrors, address: undefined });
+                  }}
+                  error={buyErrors.address}
+                  placeholder="Số nhà, đường, P/X, Q/H..."
+                />
+              </div>
+            </div>
+
+            {/* 5. PAYMENT METHOD */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-2">
                 Phương thức thanh toán
@@ -850,16 +1196,57 @@ export default function HomePage() {
                   </button>
                 ))}
               </div>
+
+              {/* QR CODE PAYMENT (Chuyển khoản VietQR hoặc Ví MoMo) */}
+              {(buyPaymentMethod === "banking" || buyPaymentMethod === "momo") && (
+                <div className="pt-2">
+                  <PaymentQRCard
+                    method={buyPaymentMethod}
+                    finalAmount={buyFinalTotal}
+                    customerPhone={buyPhone}
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Total Calculation */}
-            <div className="rounded-2xl neu-inset p-4 bg-[#E0E5EC] flex items-center justify-between">
-              <span className="text-xs text-[#6B7280] font-semibold">Tổng thanh toán:</span>
-              <span className="text-xl font-extrabold text-[#6C63FF] font-display">
-                {formatVND(selectedProduct.price * buyQty)}
-              </span>
+            {/* 6. FINANCIAL BREAKDOWN & TOTAL CALCULATION */}
+            <div className="rounded-2xl neu-inset p-4 bg-[#E0E5EC] space-y-2">
+              <div className="flex justify-between items-center text-xs text-[#6B7280]">
+                <span>Tạm tính ({buyQty} sản phẩm):</span>
+                <span className="font-bold text-[#3D4852]">{formatVND(buySubtotal)}</span>
+              </div>
+
+              {voucherDiscount > 0 && (
+                <div className="flex justify-between items-center text-xs text-[#38B2AC]">
+                  <span className="font-bold">Mã giảm giá ({appliedVoucher?.code}):</span>
+                  <span className="font-extrabold">- {formatVND(voucherDiscount)}</span>
+                </div>
+              )}
+
+              {pointsDiscount > 0 && (
+                <div className="flex justify-between items-center text-xs text-[#6C63FF]">
+                  <span className="font-bold">Đổi {pointsToUse} điểm thưởng:</span>
+                  <span className="font-extrabold">- {formatVND(pointsDiscount)}</span>
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-[#D1D9E6] flex justify-between items-center">
+                <div>
+                  <span className="text-xs text-[#6B7280] font-bold block">Tổng thanh toán:</span>
+                  {calculatedEarnedPoints > 0 && (
+                    <span className="text-[11px] text-[#6C63FF] font-extrabold inline-flex items-center gap-1 mt-0.5">
+                      <Sparkles className="h-3 w-3" />
+                      +{calculatedEarnedPoints} điểm sau đơn này
+                    </span>
+                  )}
+                </div>
+                <span className="text-xl font-black text-[#6C63FF] font-display">
+                  {formatVND(buyFinalTotal)}
+                </span>
+              </div>
             </div>
 
+            {/* 7. ACTION BUTTONS */}
             <div className="flex gap-3 pt-2">
               <NeuButton
                 type="button"
@@ -876,7 +1263,7 @@ export default function HomePage() {
                 size="md"
                 disabled={ordering}
                 loading={ordering}
-                className="flex-1"
+                className="flex-1 font-extrabold"
               >
                 Tạo đơn hàng ngay
               </NeuButton>
@@ -987,6 +1374,40 @@ export default function HomePage() {
               onChange={(e) => setRentalNotes(e.target.value)}
               placeholder="Ví dụ: Cần thêm filter CPL, tripod chụp sự kiện..."
             />
+
+            {/* Phương thức thanh toán cọc / thuê */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-2">
+                Phương thức thanh toán cọc & tiền thuê
+              </label>
+              <div className="grid grid-cols-3 gap-2.5">
+                {(["cod", "banking", "momo"] as const).map((pm) => (
+                  <button
+                    key={pm}
+                    type="button"
+                    onClick={() => setRentalPaymentMethod(pm)}
+                    className={`rounded-2xl p-2.5 text-center text-xs font-bold transition-all duration-200 cursor-pointer ${
+                      rentalPaymentMethod === pm
+                        ? "neu-accent font-extrabold"
+                        : "neu-btn text-[#6B7280]"
+                    }`}
+                  >
+                    {pm === "cod" ? "Tại Showroom" : pm === "banking" ? "Chuyển khoản" : "Ví MoMo"}
+                  </button>
+                ))}
+              </div>
+
+              {/* QR Code thanh toán nếu chọn Chuyển khoản hoặc MoMo */}
+              {(rentalPaymentMethod === "banking" || rentalPaymentMethod === "momo") && (
+                <div className="pt-3">
+                  <PaymentQRCard
+                    method={rentalPaymentMethod}
+                    finalAmount={totalRentalCost}
+                    customerPhone={rentalPhone}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Summary Calculation */}
             <div className="rounded-2xl neu-inset p-4 bg-[#E0E5EC] space-y-2 text-xs">

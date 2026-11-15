@@ -21,6 +21,11 @@ const orderSchema = new mongoose.Schema(
     items: { type: [orderItemSchema], required: true },
     subtotal: { type: Number, required: true },
     shippingFee: { type: Number, default: 0 },
+    voucherCode: { type: String, default: "", trim: true, uppercase: true },
+    voucherDiscount: { type: Number, default: 0, min: 0 },
+    pointsUsed: { type: Number, default: 0, min: 0 },
+    pointsDiscount: { type: Number, default: 0, min: 0 },
+    pointsEarned: { type: Number, default: 0, min: 0 },
     totalAmount: { type: Number, required: true },
     paymentMethod: {
       type: String,

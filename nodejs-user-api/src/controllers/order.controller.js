@@ -9,6 +9,8 @@ const createOrder = async (req, res, next) => {
       customerPhone,
       shippingAddress,
       paymentMethod,
+      voucherCode,
+      pointsToUse,
       notes,
     } = req.body;
 
@@ -31,6 +33,8 @@ const createOrder = async (req, res, next) => {
       shippingAddress,
       items,
       paymentMethod,
+      voucherCode,
+      pointsToUse,
       notes,
     });
 

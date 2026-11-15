@@ -7,6 +7,8 @@ export interface User {
   phone?: string;
   address?: string;
   avatar?: string;
+  points?: number;
+  membershipTier?: "Silver" | "Gold" | "Platinum";
 }
 
 export interface Product {
@@ -85,12 +87,32 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   shippingFee: number;
+  voucherCode?: string;
+  voucherDiscount?: number;
+  pointsUsed?: number;
+  pointsDiscount?: number;
+  pointsEarned?: number;
   totalAmount: number;
   paymentMethod: "cod" | "banking" | "momo";
   paymentStatus: "pending" | "paid";
   orderStatus: "processing" | "shipped" | "delivered" | "cancelled";
   notes?: string;
   createdAt: string;
+}
+
+export interface Voucher {
+  _id: string;
+  code: string;
+  discountType: "percent" | "fixed";
+  discountValue: number;
+  maxDiscount?: number;
+  minOrderValue: number;
+  usageLimit: number;
+  usedCount: number;
+  expiryDate: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type Booking = RentalBooking;
@@ -346,6 +368,8 @@ export const api = {
     customerPhone: string;
     shippingAddress: string;
     paymentMethod?: "cod" | "banking" | "momo";
+    voucherCode?: string;
+    pointsToUse?: number;
     notes?: string;
   }) =>
     request<{ success: boolean; message: string; data: Order }>("/orders", {
@@ -536,4 +560,42 @@ export const api = {
         }>;
       };
     }>("/admin/reports/top-performing"),
+
+  // Voucher APIs
+  getVouchers: () =>
+    request<{ success: boolean; count: number; data: Voucher[] }>("/vouchers"),
+
+  validateVoucher: (payload: { code: string; orderTotal: number }) =>
+    request<{
+      success: boolean;
+      message: string;
+      data: {
+        isValid: boolean;
+        discountAmount: number;
+        voucher?: Voucher;
+      };
+    }>("/vouchers/validate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminGetVouchers: () =>
+    request<{ success: boolean; count: number; data: Voucher[] }>("/vouchers/admin/all"),
+
+  adminCreateVoucher: (payload: Partial<Voucher>) =>
+    request<{ success: boolean; message: string; data: Voucher }>("/vouchers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  adminUpdateVoucher: (id: string, payload: Partial<Voucher>) =>
+    request<{ success: boolean; message: string; data: Voucher }>(`/vouchers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  adminDeleteVoucher: (id: string) =>
+    request<{ success: boolean; message: string; data: Voucher }>(`/vouchers/${id}`, {
+      method: "DELETE",
+    }),
 };

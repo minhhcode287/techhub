@@ -17,6 +17,7 @@ const sanitizeInput = require("./nodejs-user-api/src/middlewares/sanitize.middle
 const helmet = require("helmet");
 const productService = require("./nodejs-user-api/src/services/product.service");
 const rentalService = require("./nodejs-user-api/src/services/rental.service");
+const voucherService = require("./nodejs-user-api/src/services/voucher.service");
 
 async function startServer() {
   const app = express();
@@ -62,6 +63,7 @@ async function startServer() {
       await seedUsersIfEmpty();
       await productService.seedIfEmpty();
       await rentalService.seedIfEmpty();
+      await voucherService.seedIfEmpty();
     }
   } catch (err) {
     console.error("[Server] Error initializing database:", err);

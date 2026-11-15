@@ -56,6 +56,16 @@ const userSchema = new mongoose.Schema(
       select: false,
       default: null,
     },
+    points: {
+      type: Number,
+      default: 0,
+      min: [0, "Điểm tích lũy không thể âm"],
+    },
+    membershipTier: {
+      type: String,
+      enum: ["Silver", "Gold", "Platinum"],
+      default: "Silver",
+    },
   },
   {
     timestamps: true,

@@ -27,6 +27,8 @@ const inMemoryUsers = [
     avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
     status: "active",
     isActive: true,
+    points: 500,
+    membershipTier: "Gold",
     refreshToken: null,
     createdAt: new Date(),
     updatedAt: new Date(),

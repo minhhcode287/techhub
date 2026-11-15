@@ -6,6 +6,7 @@ const rentalRoute = require("./rental.route");
 const orderRoute = require("./order.route");
 const staffRoute = require("./staff.route");
 const adminRoute = require("./admin.route");
+const voucherRoute = require("./voucher.route");
 const { healthCheck } = require("../controllers/health.controller");
 
 const router = express.Router();
@@ -16,6 +17,7 @@ router.use("/users", userRoute);
 router.use("/products", productRoute);
 router.use("/rentals", rentalRoute);
 router.use("/orders", orderRoute);
+router.use("/vouchers", voucherRoute);
 router.use("/staff", staffRoute);
 router.use("/admin", adminRoute);
 

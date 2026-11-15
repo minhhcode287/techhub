@@ -560,26 +560,41 @@ export function NeuNavbar() {
 
           {/* User Account / Auth */}
           {user ? (
-            <Link to="/account" id="nav-account-btn">
-              <NeuButton
-                variant={isActive("/account") ? "primary" : "secondary"}
-                size="md"
-                className="hidden sm:flex items-center gap-2"
+            <div className="flex items-center gap-2">
+              <Link
+                to="/account"
+                id="nav-points-badge"
+                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl neu-inset text-xs font-extrabold text-[#D97706] hover:text-[#B45309] transition-colors"
+                title={`Điểm tích lũy: ${user.points || 0} pts - Hạng: ${user.membershipTier || "Silver"}`}
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#6C63FF] text-xs font-extrabold text-white">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <span className="font-bold text-[#3D4852] max-w-[120px] truncate">{user.name}</span>
-              </NeuButton>
-              <NeuButton
-                variant={isActive("/account") ? "primary" : "secondary"}
-                size="icon"
-                className="sm:hidden"
-                aria-label="Tài khoản"
-              >
-                <UserIcon className="h-4 w-4" />
-              </NeuButton>
-            </Link>
+                <span>★</span>
+                <span>{user.points || 0} pts</span>
+                <span className="text-[10px] text-[#6B7280] font-bold uppercase">
+                  ({user.membershipTier || "Silver"})
+                </span>
+              </Link>
+
+              <Link to="/account" id="nav-account-btn">
+                <NeuButton
+                  variant={isActive("/account") ? "primary" : "secondary"}
+                  size="md"
+                  className="hidden sm:flex items-center gap-2"
+                >
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#6C63FF] text-xs font-extrabold text-white">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="font-bold text-[#3D4852] max-w-[120px] truncate">{user.name}</span>
+                </NeuButton>
+                <NeuButton
+                  variant={isActive("/account") ? "primary" : "secondary"}
+                  size="icon"
+                  className="sm:hidden"
+                  aria-label="Tài khoản"
+                >
+                  <UserIcon className="h-4 w-4" />
+                </NeuButton>
+              </Link>
+            </div>
           ) : (
             <div className="hidden sm:flex items-center gap-2">
               <Link to="/login" id="nav-login-btn">

@@ -142,6 +142,8 @@ const initialUsers = [
     avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
     status: "active",
     isActive: true,
+    points: 500,
+    membershipTier: "Gold",
   },
   {
     name: "Nhân Viên TechHub",
@@ -153,6 +155,8 @@ const initialUsers = [
     avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
     status: "active",
     isActive: true,
+    points: 100,
+    membershipTier: "Silver",
   },
   {
     name: "Quản Trị Viên TechHub",
@@ -164,6 +168,8 @@ const initialUsers = [
     avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
     status: "active",
     isActive: true,
+    points: 1000,
+    membershipTier: "Platinum",
   },
 ];
 
@@ -181,7 +187,15 @@ const seedUsersIfEmpty = async () => {
       const existing = await User.findOne({ email: sample.email });
       if (!existing) {
         await User.create(sample);
-        console.log(`[SeedService] Đã tạo tài khoản mẫu ${sample.email} (Role: ${sample.role})`);
+        console.log(`[SeedService] Đã tạo tài khoản mẫu ${sample.email} (Role: ${sample.role}, Points: ${sample.points})`);
+      } else {
+        // Ensure points and membershipTier are populated
+        if (existing.points === undefined || existing.points === null || (sample.role === "customer" && existing.points === 0)) {
+          await User.updateOne(
+            { _id: existing._id },
+            { $set: { points: sample.points || 0, membershipTier: sample.membershipTier || "Silver" } }
+          );
+        }
       }
     }
   } catch (err) {
@@ -357,12 +371,75 @@ const seedBookingsIfEmpty = async () => {
   }
 };
 
+/**
+ * Initial Demo Vouchers
+ */
+const initialVouchers = [
+  {
+    code: "TECHHUB200K",
+    discountType: "fixed",
+    discountValue: 200000,
+    maxDiscount: 200000,
+    minOrderValue: 5000000,
+    usageLimit: 100,
+    usedCount: 12,
+    expiryDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // +60 days
+    isActive: true,
+  },
+  {
+    code: "SALE10",
+    discountType: "percent",
+    discountValue: 10,
+    maxDiscount: 1000000,
+    minOrderValue: 1000000,
+    usageLimit: 200,
+    usedCount: 45,
+    expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 days
+    isActive: true,
+  },
+  {
+    code: "NEWMEMBER",
+    discountType: "fixed",
+    discountValue: 100000,
+    maxDiscount: 100000,
+    minOrderValue: 500000,
+    usageLimit: 500,
+    usedCount: 88,
+    expiryDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // +90 days
+    isActive: true,
+  },
+];
+
+/**
+ * Seed initial vouchers if they do not exist
+ */
+const seedVouchersIfEmpty = async () => {
+  try {
+    const Voucher = require("../models/Voucher.model");
+    const { getDBStatus } = require("../config/database");
+    const dbStatus = getDBStatus();
+    if (!dbStatus.connected) return;
+
+    const count = await Voucher.countDocuments();
+    if (count === 0) {
+      await Voucher.insertMany(initialVouchers);
+      console.log(`[SeedService] Đã khởi tạo ${initialVouchers.length} mã voucher mẫu vào MongoDB.`);
+    } else {
+      console.log(`[SeedService] MongoDB đã có sẵn ${count} mã voucher.`);
+    }
+  } catch (err) {
+    console.warn("[SeedService] Voucher seed warning:", err.message);
+  }
+};
+
 module.exports = {
   initialProducts,
   initialCameras,
   initialUsers,
   initialBookings,
+  initialVouchers,
   seedUsersIfEmpty,
   seedProducts,
   seedBookingsIfEmpty,
+  seedVouchersIfEmpty,
 };

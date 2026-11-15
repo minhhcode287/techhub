@@ -7,10 +7,14 @@ import {
   CreditCard,
   Tag,
   ShoppingBag,
+  Coins,
+  Gift,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
-import { api } from "../services/api";
+import { api, type Voucher } from "../services/api";
 import SEO from "../components/SEO";
 import {
   NeuNavbar,
@@ -22,10 +26,11 @@ import {
   NeuIconWell,
   NeuEmptyState,
 } from "../components/NeumorphicComponents";
+import PaymentQRCard from "../components/PaymentQRCard";
 
 export default function CartPage() {
   const { cart, removeFromCart, updateQuantity, clearCart, subtotal, totalItems } = useCart();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
 
   // Form Fields & Realtime Validation
   const [customerName, setCustomerName] = useState(user?.name || "");
@@ -35,10 +40,19 @@ export default function CartPage() {
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "banking" | "momo">("cod");
   const [orderNotes, setOrderNotes] = useState("");
 
-  // Promo Code
-  const [promoInput, setPromoInput] = useState("");
-  const [appliedDiscount, setAppliedDiscount] = useState(0);
-  const [promoMessage, setPromoMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // Voucher / Promo State
+  const [availableVouchers, setAvailableVouchers] = useState<Voucher[]>([]);
+  const [voucherInput, setVoucherInput] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState<Voucher | null>(null);
+  const [voucherDiscount, setVoucherDiscount] = useState(0);
+  const [validatingVoucher, setValidatingVoucher] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Loyalty Points State
+  const userPoints = user?.points || 0;
+  const [pointsInput, setPointsInput] = useState<string>("");
+  const [pointsToUse, setPointsToUse] = useState<number>(0);
+  const [isUseMaxPoints, setIsUseMaxPoints] = useState<boolean>(false);
 
   // Field Errors (Realtime)
   const [errors, setErrors] = useState<{
@@ -50,6 +64,7 @@ export default function CartPage() {
   const [loading, setLoading] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<boolean>(false);
   const [createdOrderId, setCreatedOrderId] = useState<string>("");
+  const [earnedPointsFinal, setEarnedPointsFinal] = useState<number>(0);
 
   useEffect(() => {
     if (user) {
@@ -59,6 +74,21 @@ export default function CartPage() {
       if (!shippingAddress && user.address) setShippingAddress(user.address);
     }
   }, [user, customerName, customerPhone, customerEmail, shippingAddress]);
+
+  // Load active vouchers from API
+  useEffect(() => {
+    const fetchVouchers = async () => {
+      try {
+        const res = await api.getVouchers();
+        if (res.success && res.data) {
+          setAvailableVouchers(res.data);
+        }
+      } catch (err) {
+        console.warn("Lỗi tải danh sách voucher:", err);
+      }
+    };
+    fetchVouchers();
+  }, []);
 
   const formatVND = (amount: number) => {
     return new Intl.NumberFormat("vi-VN", {
@@ -90,34 +120,91 @@ export default function CartPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleApplyPromo = (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = promoInput.trim().toUpperCase();
+  // Voucher apply handler
+  const handleApplyVoucher = async (codeToApply?: string) => {
+    const code = (codeToApply || voucherInput).trim().toUpperCase();
     if (!code) return;
 
-    if (code === "TECHHUB" || code === "GIAM10") {
-      const discount = Math.round(subtotal * 0.1);
-      setAppliedDiscount(discount);
-      setPromoMessage({
-        type: "success",
-        text: `Áp dụng mã ${code} thành công: Giảm 10% (-${formatVND(discount)})`,
-      });
-    } else if (code === "FREESHIP") {
-      setAppliedDiscount(30000);
-      setPromoMessage({
-        type: "success",
-        text: "Áp dụng mã FREESHIP thành công: Miễn phí vận chuyển (-30.000 ₫)",
-      });
-    } else {
-      setPromoMessage({
+    try {
+      setValidatingVoucher(true);
+      setVoucherMessage(null);
+      const res = await api.validateVoucher({ code, orderTotal: subtotal });
+      if (res.success && res.data?.isValid) {
+        setAppliedVoucher(res.data.voucher || null);
+        setVoucherInput(code);
+        setVoucherDiscount(res.data.discountAmount);
+        setVoucherMessage({
+          type: "success",
+          text: `Áp dụng mã ${code} thành công: Giảm ${formatVND(res.data.discountAmount)}`,
+        });
+      } else {
+        setVoucherMessage({
+          type: "error",
+          text: res.message || "Mã giảm giá không hợp lệ",
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Mã giảm giá không hợp lệ hoặc không đủ điều kiện";
+      setVoucherMessage({
         type: "error",
-        text: "Mã giảm giá không hợp lệ hoặc đã hết hạn.",
+        text: msg,
       });
+    } finally {
+      setValidatingVoucher(false);
     }
   };
 
-  const shippingFee = subtotal >= 2000000 || appliedDiscount >= 30000 ? 0 : 30000;
-  const finalTotal = Math.max(0, subtotal + shippingFee - appliedDiscount);
+  const handleRemoveVoucher = () => {
+    setAppliedVoucher(null);
+    setVoucherInput("");
+    setVoucherDiscount(0);
+    setVoucherMessage(null);
+  };
+
+  // Loyalty Points calculation: 1 pt = 10,000 VND
+  const maxPointsCanUse = Math.min(
+    userPoints,
+    Math.floor(Math.max(0, subtotal - voucherDiscount) / 10000)
+  );
+
+  const handlePointsChange = (valStr: string) => {
+    setIsUseMaxPoints(false);
+    const cleanNum = valStr.replace(/[^0-9]/g, "");
+    if (!cleanNum) {
+      setPointsInput("");
+      setPointsToUse(0);
+      return;
+    }
+    const num = parseInt(cleanNum, 10);
+    const capped = Math.min(num, maxPointsCanUse);
+    setPointsInput(String(capped));
+    setPointsToUse(capped);
+  };
+
+  const handleToggleMaxPoints = () => {
+    if (isUseMaxPoints || pointsToUse > 0) {
+      setIsUseMaxPoints(false);
+      setPointsToUse(0);
+      setPointsInput("");
+    } else {
+      setIsUseMaxPoints(true);
+      setPointsToUse(maxPointsCanUse);
+      setPointsInput(maxPointsCanUse > 0 ? String(maxPointsCanUse) : "");
+    }
+  };
+
+  // Re-adjust pointsToUse if maxPointsCanUse decreases
+  useEffect(() => {
+    if (pointsToUse > maxPointsCanUse) {
+      setPointsToUse(maxPointsCanUse);
+      setPointsInput(maxPointsCanUse > 0 ? String(maxPointsCanUse) : "");
+    }
+  }, [maxPointsCanUse, pointsToUse]);
+
+  const pointsDiscount = pointsToUse * 10000;
+  const shippingFee = subtotal >= 2000000 ? 0 : 30000;
+  const finalTotal = Math.max(0, subtotal - voucherDiscount - pointsDiscount) + shippingFee;
+  const calculatedEarnedPoints = Math.floor(finalTotal / 100000);
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +219,8 @@ export default function CartPage() {
         customerPhone,
         shippingAddress,
         paymentMethod,
+        voucherCode: appliedVoucher ? appliedVoucher.code : voucherInput.trim().toUpperCase(),
+        pointsToUse,
         notes: orderNotes,
         items: cart.map((item) => ({
           productId: item.product._id,
@@ -144,7 +233,12 @@ export default function CartPage() {
 
       if (res.success && res.data) {
         setCreatedOrderId(res.data._id);
+        setEarnedPointsFinal(res.data.pointsEarned || calculatedEarnedPoints);
         clearCart();
+        // Immediately refresh user context to reflect updated points
+        if (typeof refreshUser === "function") {
+          await refreshUser();
+        }
         setOrderSuccess(true);
       }
     } catch (err: unknown) {
@@ -179,6 +273,13 @@ export default function CartPage() {
             <p className="mt-3 text-sm text-[#6B7280] leading-relaxed max-w-md mx-auto">
               Đơn hàng <strong className="text-[#3D4852] font-mono">#{createdOrderId.slice(-6).toUpperCase()}</strong> đã được ghi nhận. Đội ngũ CSKH sẽ liên hệ xác nhận và tiến hành đóng gói giao hỏa tốc đến bạn.
             </p>
+
+            {earnedPointsFinal > 0 && (
+              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-2xl neu-inset text-xs font-bold text-[#6C63FF]">
+                <Sparkles className="h-4 w-4" />
+                <span>Bạn đã tích lũy thêm +{earnedPointsFinal} điểm thưởng vào tài khoản!</span>
+              </div>
+            )}
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
               <Link to="/account" id="view-order-history-link">
@@ -317,31 +418,219 @@ export default function CartPage() {
               </NeuCard>
             ))}
 
-            {/* Promo Code Card */}
-            <NeuCard rounded="24" className="p-5">
-              <form onSubmit={handleApplyPromo} className="flex gap-3">
-                <div className="flex-1">
-                  <NeuInput
-                    id="cart-promo-input"
-                    type="text"
-                    placeholder="Nhập mã giảm giá (VD: TECHHUB, GIAM10)"
-                    value={promoInput}
-                    onChange={(e) => setPromoInput(e.target.value)}
-                    icon={<Tag className="h-4 w-4" />}
-                  />
+            {/* Voucher / Mã Giảm Giá Card */}
+            <NeuCard rounded="24" className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-extrabold text-[#3D4852] flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-[#6C63FF]" /> Mã ưu đãi & Khuyến mãi
+                </h3>
+                {appliedVoucher && (
+                  <NeuBadge variant="teal">Đã áp dụng mã {appliedVoucher.code}</NeuBadge>
+                )}
+              </div>
+
+              {appliedVoucher ? (
+                <div className="p-3.5 rounded-2xl neu-inset bg-[#E0E5EC] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-xl neu-accent flex items-center justify-center font-black text-xs">
+                      %
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-xs text-[#3D4852]">
+                        {appliedVoucher.code}
+                      </p>
+                      <p className="text-[11px] text-[#38B2AC] font-bold">
+                        Đã giảm {formatVND(voucherDiscount)}
+                      </p>
+                    </div>
+                  </div>
+                  <NeuButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveVoucher}
+                    className="text-[#E53E3E] text-xs font-bold"
+                  >
+                    <X className="h-3.5 w-3.5" /> Hủy mã
+                  </NeuButton>
                 </div>
-                <NeuButton type="submit" variant="secondary" size="md" className="shrink-0">
-                  Áp dụng
-                </NeuButton>
-              </form>
-              {promoMessage && (
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleApplyVoucher();
+                  }}
+                  className="flex gap-2"
+                >
+                  <div className="flex-1">
+                    <NeuInput
+                      id="cart-voucher-input"
+                      type="text"
+                      placeholder="Nhập mã voucher (VD: TECHHUB200K, SALE10)"
+                      value={voucherInput}
+                      onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
+                      icon={<Tag className="h-4 w-4" />}
+                    />
+                  </div>
+                  <NeuButton
+                    type="submit"
+                    variant="secondary"
+                    size="md"
+                    disabled={validatingVoucher || !voucherInput.trim()}
+                    loading={validatingVoucher}
+                    className="shrink-0 font-bold"
+                  >
+                    Áp dụng
+                  </NeuButton>
+                </form>
+              )}
+
+              {voucherMessage && (
                 <p
-                  className={`mt-2 text-xs font-bold ${
-                    promoMessage.type === "success" ? "text-[#38B2AC]" : "text-[#E53E3E]"
+                  className={`text-xs font-bold ${
+                    voucherMessage.type === "success" ? "text-[#38B2AC]" : "text-[#E53E3E]"
                   }`}
                 >
-                  {promoMessage.text}
+                  {voucherMessage.text}
                 </p>
+              )}
+
+              {/* Fast-select active vouchers */}
+              {availableVouchers.length > 0 && (
+                <div className="pt-2 border-t border-[#D1D9E6]/60">
+                  <p className="text-[11px] font-bold text-[#6B7280] mb-2 uppercase tracking-wider">
+                    Mã giảm giá đang có sẵn dành cho bạn:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {availableVouchers.map((v) => {
+                      const isSelected = appliedVoucher?.code === v.code;
+                      const isEligible = subtotal >= (v.minOrderValue || 0);
+
+                      return (
+                        <div
+                          key={v._id || v.code}
+                          className={`p-2.5 rounded-xl transition-all border ${
+                            isSelected
+                              ? "neu-inset border-[#38B2AC]/50"
+                              : "neu-extruded-sm border-transparent hover:border-[#6C63FF]/30"
+                          } flex items-center justify-between text-xs`}
+                        >
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-[#3D4852] font-mono">
+                                {v.code}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded-md bg-[#6C63FF]/10 text-[#6C63FF] text-[10px] font-bold">
+                                {v.discountType === "percent"
+                                  ? `Giảm ${v.discountValue}%`
+                                  : `Giảm ${formatVND(v.discountValue)}`}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[#6B7280] mt-0.5">
+                              Đơn từ {formatVND(v.minOrderValue || 0)}
+                            </p>
+                          </div>
+
+                          <NeuButton
+                            type="button"
+                            variant={isSelected ? "ghost" : "secondary"}
+                            size="sm"
+                            disabled={isSelected || validatingVoucher || !isEligible}
+                            onClick={() => handleApplyVoucher(v.code)}
+                            className="text-[11px] py-1 px-2.5 font-bold"
+                          >
+                            {isSelected ? "Đã dùng" : isEligible ? "Áp dụng" : "Chưa đủ"}
+                          </NeuButton>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </NeuCard>
+
+            {/* Loyalty Points / Điểm Tích Lũy Card */}
+            <NeuCard rounded="24" className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-extrabold text-[#3D4852] flex items-center gap-2">
+                  <Coins className="h-4 w-4 text-[#D97706]" /> Điểm tích lũy TechHub
+                </h3>
+                {user && (
+                  <NeuBadge variant={user.membershipTier === "Platinum" ? "accent" : user.membershipTier === "Gold" ? "warning" : "default"}>
+                    Hạng {user.membershipTier || "Silver"}
+                  </NeuBadge>
+                )}
+              </div>
+
+              {user ? (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-2xl neu-inset bg-[#E0E5EC] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs text-[#6B7280]">Số dư điểm hiện tại:</span>
+                      <p className="text-base font-black text-[#D97706]">
+                        {userPoints} điểm{" "}
+                        <span className="text-xs font-normal text-[#6B7280]">
+                          (= {formatVND(userPoints * 10000)})
+                        </span>
+                      </p>
+                    </div>
+
+                    {maxPointsCanUse > 0 && (
+                      <NeuButton
+                        type="button"
+                        variant={isUseMaxPoints ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={handleToggleMaxPoints}
+                        className="text-xs font-bold shrink-0"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 mr-1 text-[#D97706]" />
+                        {isUseMaxPoints ? "Bỏ dùng điểm" : `Dùng tối đa (${maxPointsCanUse} điểm)`}
+                      </NeuButton>
+                    )}
+                  </div>
+
+                  {userPoints > 0 ? (
+                    <div>
+                      <label className="block text-xs font-bold text-[#6B7280] mb-1.5">
+                        Nhập số điểm muốn đổi (Tối đa: {maxPointsCanUse} điểm):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <NeuInput
+                          id="cart-points-input"
+                          type="text"
+                          placeholder="VD: 50"
+                          value={pointsInput}
+                          onChange={(e) => handlePointsChange(e.target.value)}
+                          icon={<Coins className="h-4 w-4" />}
+                          disabled={maxPointsCanUse <= 0}
+                        />
+                        {pointsToUse > 0 && (
+                          <span className="text-xs font-extrabold text-[#38B2AC] whitespace-nowrap">
+                            =-{formatVND(pointsDiscount)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#6B7280] italic">
+                      Bạn chưa có điểm tích lũy. Đặt hàng để nhận điểm thưởng ngay sau đơn này!
+                    </p>
+                  )}
+
+                  <p className="text-[10px] text-[#6B7280] border-t border-[#D1D9E6]/60 pt-2 leading-relaxed">
+                    💡 <strong>Quy tắc điểm:</strong> 1 điểm = 10.000 đ giảm trực tiếp. Mỗi 100.000 đ thanh toán tích lũy +1 điểm.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl neu-inset bg-[#E0E5EC] flex items-center justify-between text-xs">
+                  <span className="text-[#6B7280]">
+                    Đăng nhập để sử dụng và tích lũy điểm thưởng thành viên
+                  </span>
+                  <Link to="/login">
+                    <NeuButton variant="secondary" size="sm" className="font-bold">
+                      Đăng nhập
+                    </NeuButton>
+                  </Link>
+                </div>
               )}
             </NeuCard>
           </div>
@@ -432,6 +721,15 @@ export default function CartPage() {
                   </div>
                 </div>
 
+                {/* QR CODE PAYMENT (Chuyển khoản VietQR hoặc Ví MoMo) */}
+                {(paymentMethod === "banking" || paymentMethod === "momo") && (
+                  <PaymentQRCard
+                    method={paymentMethod}
+                    finalAmount={finalTotal}
+                    customerPhone={customerPhone}
+                  />
+                )}
+
                 {/* Cost Calculation Well */}
                 <div className="rounded-2xl neu-inset p-4 bg-[#E0E5EC] space-y-2 text-xs">
                   <div className="flex justify-between text-[#6B7280]">
@@ -439,21 +737,40 @@ export default function CartPage() {
                     <span className="text-[#3D4852] font-bold">{formatVND(subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-[#6B7280]">
-                    <span>Phí vận chuyển hỏa tốc:</span>
+                    <span>Phí vận chuyển:</span>
                     <span className="text-[#3D4852] font-semibold">
                       {shippingFee === 0 ? "Miễn phí" : formatVND(shippingFee)}
                     </span>
                   </div>
-                  {appliedDiscount > 0 && (
+
+                  {voucherDiscount > 0 && (
                     <div className="flex justify-between text-[#38B2AC] font-bold">
-                      <span>Mã giảm giá:</span>
-                      <span>-{formatVND(appliedDiscount)}</span>
+                      <span>Giảm giá Voucher ({appliedVoucher?.code || voucherInput}):</span>
+                      <span>-{formatVND(voucherDiscount)}</span>
                     </div>
                   )}
+
+                  {pointsDiscount > 0 && (
+                    <div className="flex justify-between text-[#D97706] font-bold">
+                      <span>Đổi điểm tích lũy ({pointsToUse} điểm):</span>
+                      <span>-{formatVND(pointsDiscount)}</span>
+                    </div>
+                  )}
+
                   <div className="border-t border-[#D1D9E6] pt-2 flex justify-between font-extrabold text-base">
                     <span className="text-[#3D4852]">Tổng thanh toán:</span>
                     <span className="text-[#6C63FF] font-display">{formatVND(finalTotal)}</span>
                   </div>
+
+                  {/* Estimated Loyalty Points Earned */}
+                  {user && calculatedEarnedPoints > 0 && (
+                    <div className="mt-2 pt-2 border-t border-[#D1D9E6]/60 flex items-center justify-between text-[11px] text-[#D97706] font-bold">
+                      <span className="flex items-center gap-1">
+                        <Gift className="h-3.5 w-3.5" /> Điểm tích lũy dự kiến:
+                      </span>
+                      <span>+{calculatedEarnedPoints} điểm</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2">

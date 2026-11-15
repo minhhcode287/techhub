@@ -4,6 +4,7 @@ const app = require("./app");
 const { connectDatabase } = require("./config/database");
 const productService = require("./services/product.service");
 const rentalService = require("./services/rental.service");
+const voucherService = require("./services/voucher.service");
 const env = require("./config/env");
 
 const startServer = async () => {
@@ -14,6 +15,7 @@ const startServer = async () => {
       await seedUsersIfEmpty();
       await productService.seedIfEmpty();
       await rentalService.seedIfEmpty();
+      await voucherService.seedIfEmpty();
     }
   } catch (err) {
     console.warn("[Server] DB connection notice:", err.message);

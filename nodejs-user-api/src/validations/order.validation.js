@@ -54,6 +54,8 @@ const createOrder = {
       "any.required": "Vui lòng nhập địa chỉ nhận hàng",
     }),
     paymentMethod: Joi.string().valid("cod", "banking", "momo").default("cod"),
+    voucherCode: Joi.string().trim().uppercase().allow("", null).optional(),
+    pointsToUse: Joi.number().integer().min(0).default(0).optional(),
     notes: Joi.string().trim().max(500).allow("", null).optional(),
   }),
 };

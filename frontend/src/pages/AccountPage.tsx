@@ -18,6 +18,9 @@ import {
   Save,
   Trash2,
   ShieldCheck,
+  Tag,
+  Coins,
+  Sparkles,
 } from "lucide-react";
 import {
   NeuNavbar,
@@ -230,7 +233,7 @@ export default function AccountPage() {
                 {user.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-2xl font-extrabold font-display text-[#3D4852]">
                     {user.name}
                   </h1>
@@ -241,8 +244,28 @@ export default function AccountPage() {
                   ) : (
                     <NeuBadge variant="default">Khách hàng</NeuBadge>
                   )}
+                  <NeuBadge
+                    variant={
+                      user.membershipTier === "Platinum"
+                        ? "accent"
+                        : user.membershipTier === "Gold"
+                        ? "warning"
+                        : "default"
+                    }
+                  >
+                    Hạng {user.membershipTier || "Silver"}
+                  </NeuBadge>
                 </div>
-                <p className="text-xs text-[#6B7280] font-medium mt-1">{maskEmail(user.email)}</p>
+                <div className="flex items-center gap-4 mt-1.5 text-xs">
+                  <p className="text-[#6B7280] font-medium">{maskEmail(user.email)}</p>
+                  <span className="text-[#D1D9E6]">•</span>
+                  <p className="font-extrabold text-[#D97706] flex items-center gap-1">
+                    <Coins className="h-3.5 w-3.5" /> {user.points || 0} điểm tích lũy
+                    <span className="font-normal text-[#6B7280]">
+                      (= {((user.points || 0) * 10000).toLocaleString("vi-VN")} ₫)
+                    </span>
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -497,6 +520,27 @@ export default function AccountPage() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Voucher & Points Details */}
+                    {(ord.voucherCode || ord.pointsUsed || ord.pointsEarned) && (
+                      <div className="mt-3 p-2.5 rounded-xl neu-inset bg-[#E0E5EC] flex flex-wrap items-center gap-3 text-xs">
+                        {ord.voucherCode && (
+                          <span className="flex items-center gap-1 font-bold text-[#38B2AC]">
+                            <Tag className="h-3.5 w-3.5" /> Voucher {ord.voucherCode}: -{formatVND(ord.voucherDiscount || 0)}
+                          </span>
+                        )}
+                        {ord.pointsUsed ? (
+                          <span className="flex items-center gap-1 font-bold text-[#D97706]">
+                            <Coins className="h-3.5 w-3.5" /> Dùng {ord.pointsUsed} điểm (-{formatVND(ord.pointsDiscount || ord.pointsUsed * 10000)})
+                          </span>
+                        ) : null}
+                        {ord.pointsEarned ? (
+                          <span className="flex items-center gap-1 font-bold text-[#6C63FF]">
+                            <Sparkles className="h-3.5 w-3.5" /> Tích lũy: +{ord.pointsEarned} điểm
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
 
                     {/* Shipping Address & Actions */}
                     <div className="mt-4 pt-3 border-t border-[#D1D9E6]/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#6B7280]">
