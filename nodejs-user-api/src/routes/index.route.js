@@ -7,6 +7,8 @@ const orderRoute = require("./order.route");
 const staffRoute = require("./staff.route");
 const adminRoute = require("./admin.route");
 const voucherRoute = require("./voucher.route");
+const paymentRoute = require("./payment.route");
+const chatRoute = require("./chat.route");
 const { healthCheck } = require("../controllers/health.controller");
 
 const router = express.Router();
@@ -18,6 +20,8 @@ router.use("/products", productRoute);
 router.use("/rentals", rentalRoute);
 router.use("/orders", orderRoute);
 router.use("/vouchers", voucherRoute);
+router.use("/payments", paymentRoute);
+router.use("/chat", chatRoute);
 router.use("/staff", staffRoute);
 router.use("/admin", adminRoute);
 

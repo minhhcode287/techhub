@@ -26,6 +26,8 @@ const startServer = async () => {
     console.log(`🚀 REST API Service running in [${env.NODE_ENV}] mode`);
     console.log(`📡 Listening at: http://0.0.0.0:${env.PORT}`);
     console.log(`📄 Health Check: http://0.0.0.0:${env.PORT}/api/health`);
+    const geminiStatus = process.env.GEMINI_API_KEY ? "Connected" : "Fallback Mode";
+    console.log(`🤖 Gemini AI Status: ${geminiStatus}`);
     console.log(`===============================================`);
   });
 

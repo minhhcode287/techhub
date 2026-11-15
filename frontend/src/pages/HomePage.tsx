@@ -19,6 +19,7 @@ import {
   Coins,
   Gift,
   X,
+  Flame,
 } from "lucide-react";
 import {
   NeuNavbar,
@@ -67,6 +68,7 @@ export default function HomePage() {
   const [buyPhone, setBuyPhone] = useState<string>(user?.phone || "");
   const [buyAddress, setBuyAddress] = useState<string>(user?.address || "");
   const [buyPaymentMethod, setBuyPaymentMethod] = useState<"cod" | "banking" | "momo">("cod");
+  const [buyPaymentPaid, setBuyPaymentPaid] = useState<boolean>(false);
   const [ordering, setOrdering] = useState<boolean>(false);
   const [buyErrors, setBuyErrors] = useState<{ phone?: string; address?: string }>({});
 
@@ -96,6 +98,7 @@ export default function HomePage() {
   const [rentalPhone, setRentalPhone] = useState<string>(user?.phone || "");
   const [rentalNotes, setRentalNotes] = useState<string>("");
   const [rentalPaymentMethod, setRentalPaymentMethod] = useState<"cod" | "banking" | "momo">("cod");
+  const [rentalPaymentPaid, setRentalPaymentPaid] = useState<boolean>(false);
   const [bookingLoading, setBookingLoading] = useState<boolean>(false);
   const [rentalErrors, setRentalErrors] = useState<{ idCard?: string; phone?: string }>({});
 
@@ -182,6 +185,7 @@ export default function HomePage() {
     setSelectedProduct(item);
     setBuyQty(1);
     setBuyErrors({});
+    setBuyPaymentPaid(false);
     setAppliedVoucher(null);
     setVoucherDiscount(0);
     setVoucherInput("");
@@ -191,8 +195,23 @@ export default function HomePage() {
     setIsUseMaxPoints(false);
   };
 
+  // Lắng nghe sự kiện mở Quick Buy từ Modal So sánh & Tin nổi bật
+  useEffect(() => {
+    const handleQuickBuyEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<Product>;
+      if (customEvent.detail) {
+        handleOpenQuickBuy(customEvent.detail);
+      }
+    };
+    window.addEventListener("techhub:open_quick_buy", handleQuickBuyEvent);
+    return () => {
+      window.removeEventListener("techhub:open_quick_buy", handleQuickBuyEvent);
+    };
+  }, []);
+
   const handleAdjustBuyQty = (newQty: number) => {
-    const validQty = Math.max(1, newQty);
+    const maxStock = selectedProduct?.stock || 99;
+    const validQty = Math.max(1, Math.min(newQty, maxStock));
     setBuyQty(validQty);
     const newSubtotal = selectedProduct ? selectedProduct.price * validQty : 0;
 
@@ -331,6 +350,7 @@ export default function HomePage() {
         customerPhone: buyPhone,
         shippingAddress: buyAddress,
         paymentMethod: buyPaymentMethod,
+        paymentStatus: buyPaymentPaid ? "paid" : "pending",
         voucherCode: appliedVoucher ? appliedVoucher.code : (voucherInput.trim() ? voucherInput.trim().toUpperCase() : undefined),
         pointsToUse,
         items: [
@@ -516,6 +536,16 @@ export default function HomePage() {
                   className="flex items-center gap-2.5"
                 >
                   <Camera className="h-5 w-5" /> Thuê máy ảnh chuyên nghiệp
+                </NeuButton>
+
+                <NeuButton
+                  id="hero-compare-highlights-btn"
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => window.dispatchEvent(new CustomEvent("techhub:open_compare_modal"))}
+                  className="flex items-center gap-2 font-black text-[#E53E3E] border border-orange-200/80 shadow-md"
+                >
+                  <Flame className="h-5 w-5 text-[#E53E3E] fill-[#E53E3E]" /> 🔥 Tin nổi bật & So sánh
                 </NeuButton>
               </div>
 
@@ -902,6 +932,7 @@ export default function HomePage() {
                         disabled={cam.availableQuantity <= 0}
                         onClick={() => {
                           setSelectedCamera(cam);
+                          setRentalPaymentPaid(false);
                           setRentalErrors({});
                         }}
                         className="w-full font-bold"
@@ -947,19 +978,45 @@ export default function HomePage() {
 
               <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-none border-[#D1D9E6]/60 pt-2 sm:pt-0">
                 <span className="text-xs text-[#6B7280] font-bold sm:hidden">Số lượng:</span>
-                <div className="flex items-center gap-2 neu-extruded-sm rounded-xl p-1 bg-[#E0E5EC]">
+                <div className="flex items-center gap-1.5 neu-extruded-sm rounded-xl p-1 bg-[#E0E5EC]">
                   <button
                     type="button"
                     onClick={() => handleAdjustBuyQty(buyQty - 1)}
-                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                    disabled={buyQty <= 1}
+                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Giảm 1 sản phẩm"
                   >
                     -
                   </button>
-                  <span className="text-xs font-extrabold text-[#3D4852] px-2">{buyQty}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={selectedProduct?.stock || 99}
+                    value={buyQty}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) {
+                        handleAdjustBuyQty(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      const maxStock = selectedProduct?.stock || 99;
+                      if (isNaN(val) || val < 1) {
+                        handleAdjustBuyQty(1);
+                      } else if (val > maxStock) {
+                        handleAdjustBuyQty(maxStock);
+                      }
+                    }}
+                    className="w-12 text-center text-xs font-black text-[#3D4852] bg-transparent outline-none py-1 focus:bg-white/60 rounded-md transition"
+                    title={`Tồn kho còn: ${selectedProduct?.stock || 0} sản phẩm`}
+                  />
                   <button
                     type="button"
                     onClick={() => handleAdjustBuyQty(buyQty + 1)}
-                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                    disabled={buyQty >= (selectedProduct?.stock || 99)}
+                    className="h-7 w-7 rounded-lg text-xs font-black hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title={buyQty >= (selectedProduct?.stock || 99) ? "Đã đạt tối đa số lượng tồn kho" : "Tăng 1 sản phẩm"}
                   >
                     +
                   </button>
@@ -1185,7 +1242,10 @@ export default function HomePage() {
                   <button
                     key={pm}
                     type="button"
-                    onClick={() => setBuyPaymentMethod(pm)}
+                    onClick={() => {
+                      setBuyPaymentMethod(pm);
+                      setBuyPaymentPaid(false);
+                    }}
                     className={`rounded-2xl p-2.5 text-center text-xs font-bold transition-all duration-200 cursor-pointer ${
                       buyPaymentMethod === pm
                         ? "neu-accent font-extrabold"
@@ -1204,6 +1264,8 @@ export default function HomePage() {
                     method={buyPaymentMethod}
                     finalAmount={buyFinalTotal}
                     customerPhone={buyPhone}
+                    onPaymentSuccess={() => setBuyPaymentPaid(true)}
+                    onStatusChange={(status) => setBuyPaymentPaid(status === "PAID")}
                   />
                 </div>
               )}
@@ -1246,6 +1308,13 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* Cảnh báo chờ thanh toán QR nếu chưa PAID */}
+            {(buyPaymentMethod === "banking" || buyPaymentMethod === "momo") && !buyPaymentPaid && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 text-[11px] text-center font-bold animate-fadeIn">
+                ⚠️ Vui lòng quét mã QR thanh toán phía trên để hoàn tất (Hệ thống AI sẽ tự động mở khóa nút ngay khi nhận được tiền).
+              </div>
+            )}
+
             {/* 7. ACTION BUTTONS */}
             <div className="flex gap-3 pt-2">
               <NeuButton
@@ -1261,11 +1330,21 @@ export default function HomePage() {
                 type="submit"
                 variant="primary"
                 size="md"
-                disabled={ordering}
+                disabled={ordering || ((buyPaymentMethod === "banking" || buyPaymentMethod === "momo") && !buyPaymentPaid)}
                 loading={ordering}
-                className="flex-1 font-extrabold"
+                className={`flex-1 font-extrabold transition-all ${
+                  buyPaymentPaid
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border border-emerald-400"
+                    : (buyPaymentMethod === "banking" || buyPaymentMethod === "momo") && !buyPaymentPaid
+                    ? "opacity-60 cursor-not-allowed"
+                    : ""
+                }`}
               >
-                Tạo đơn hàng ngay
+                {buyPaymentPaid
+                  ? "Đã thanh toán - Tạo đơn ngay"
+                  : (buyPaymentMethod === "banking" || buyPaymentMethod === "momo")
+                  ? "Chờ thanh toán QR..."
+                  : "Tạo đơn hàng ngay"}
               </NeuButton>
             </div>
           </form>
@@ -1385,7 +1464,10 @@ export default function HomePage() {
                   <button
                     key={pm}
                     type="button"
-                    onClick={() => setRentalPaymentMethod(pm)}
+                    onClick={() => {
+                      setRentalPaymentMethod(pm);
+                      setRentalPaymentPaid(false);
+                    }}
                     className={`rounded-2xl p-2.5 text-center text-xs font-bold transition-all duration-200 cursor-pointer ${
                       rentalPaymentMethod === pm
                         ? "neu-accent font-extrabold"
@@ -1404,6 +1486,8 @@ export default function HomePage() {
                     method={rentalPaymentMethod}
                     finalAmount={totalRentalCost}
                     customerPhone={rentalPhone}
+                    onPaymentSuccess={() => setRentalPaymentPaid(true)}
+                    onStatusChange={(status) => setRentalPaymentPaid(status === "PAID")}
                   />
                 </div>
               )}
@@ -1429,6 +1513,13 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* Cảnh báo chờ thanh toán QR cọc & tiền thuê nếu chưa PAID */}
+            {(rentalPaymentMethod === "banking" || rentalPaymentMethod === "momo") && !rentalPaymentPaid && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 text-[11px] text-center font-bold animate-fadeIn">
+                ⚠️ Vui lòng quét mã QR thanh toán cọc & tiền thuê phía trên để hoàn tất giữ máy (Hệ thống AI sẽ tự động mở khóa nút ngay khi nhận được tiền).
+              </div>
+            )}
+
             <div className="flex gap-3 pt-2">
               <NeuButton
                 type="button"
@@ -1443,11 +1534,21 @@ export default function HomePage() {
                 type="submit"
                 variant="teal"
                 size="md"
-                disabled={bookingLoading}
+                disabled={bookingLoading || ((rentalPaymentMethod === "banking" || rentalPaymentMethod === "momo") && !rentalPaymentPaid)}
                 loading={bookingLoading}
-                className="flex-1"
+                className={`flex-1 transition-all ${
+                  rentalPaymentPaid
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border border-emerald-400 font-extrabold"
+                    : (rentalPaymentMethod === "banking" || rentalPaymentMethod === "momo") && !rentalPaymentPaid
+                    ? "opacity-60 cursor-not-allowed"
+                    : ""
+                }`}
               >
-                Xác nhận đặt giữ máy
+                {rentalPaymentPaid
+                  ? "Đã thanh toán - Đặt giữ máy"
+                  : (rentalPaymentMethod === "banking" || rentalPaymentMethod === "momo")
+                  ? "Chờ thanh toán QR..."
+                  : "Xác nhận đặt giữ máy"}
               </NeuButton>
             </div>
           </form>

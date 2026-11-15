@@ -4,10 +4,16 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import dotenv from "dotenv";
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment variables from all possible locations
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+dotenv.config({ path: path.resolve(__dirname, "nodejs-user-api", ".env") });
+dotenv.config();
 
 const { connectDatabase } = require("./nodejs-user-api/src/config/database");
 const { PORT, NODE_ENV } = require("./nodejs-user-api/src/config/jwt");
@@ -120,6 +126,8 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 TechHub Fullstack Server running on http://localhost:${PORT}`);
     console.log(`📡 Backend API routes: http://localhost:${PORT}/api/health`);
+    const geminiStatus = process.env.GEMINI_API_KEY ? "Connected" : "Fallback Mode";
+    console.log(`🤖 Gemini AI Status: ${geminiStatus}`);
   });
 }
 

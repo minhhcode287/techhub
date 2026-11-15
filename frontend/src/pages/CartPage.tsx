@@ -38,6 +38,7 @@ export default function CartPage() {
   const [customerEmail, setCustomerEmail] = useState(user?.email || "");
   const [shippingAddress, setShippingAddress] = useState(user?.address || "");
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "banking" | "momo">("cod");
+  const [paymentPaid, setPaymentPaid] = useState<boolean>(false);
   const [orderNotes, setOrderNotes] = useState("");
 
   // Voucher / Promo State
@@ -219,6 +220,7 @@ export default function CartPage() {
         customerPhone,
         shippingAddress,
         paymentMethod,
+        paymentStatus: paymentPaid ? "paid" : "pending",
         voucherCode: appliedVoucher ? appliedVoucher.code : voucherInput.trim().toUpperCase(),
         pointsToUse,
         notes: orderNotes,
@@ -382,20 +384,52 @@ export default function CartPage() {
                 </div>
 
                 <div className="flex items-center justify-between w-full sm:w-auto gap-4 self-end sm:self-center border-t sm:border-none border-[#D1D9E6]/60 pt-3 sm:pt-0">
-                  {/* Quantity selector */}
-                  <div className="flex items-center gap-2 neu-inset-sm rounded-xl p-1 bg-[#E0E5EC]">
+                  {/* Quantity selector with direct input */}
+                  <div className="flex items-center gap-1.5 neu-inset-sm rounded-xl p-1 bg-[#E0E5EC]">
                     <button
                       type="button"
                       onClick={() => updateQuantity(product._id, quantity - 1)}
                       className="h-7 w-7 rounded-lg text-xs font-extrabold hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                      title="Giảm 1 sản phẩm"
                     >
                       -
                     </button>
-                    <span className="text-xs font-bold text-[#3D4852] px-2">{quantity}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={product.stock || 99}
+                      value={quantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          const maxStock = product.stock || 99;
+                          const safeQty = Math.max(1, Math.min(val, maxStock));
+                          updateQuantity(product._id, safeQty);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        const maxStock = product.stock || 99;
+                        if (isNaN(val) || val < 1) {
+                          updateQuantity(product._id, 1);
+                        } else if (val > maxStock) {
+                          updateQuantity(product._id, maxStock);
+                        }
+                      }}
+                      className="w-12 text-center text-xs font-black text-[#3D4852] bg-transparent outline-none py-1 focus:bg-white/60 rounded-md transition"
+                      title={`Tồn kho còn: ${product.stock} sản phẩm`}
+                    />
                     <button
                       type="button"
-                      onClick={() => updateQuantity(product._id, quantity + 1)}
-                      className="h-7 w-7 rounded-lg text-xs font-extrabold hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852]"
+                      onClick={() => {
+                        const maxStock = product.stock || 99;
+                        if (quantity < maxStock) {
+                          updateQuantity(product._id, quantity + 1);
+                        }
+                      }}
+                      disabled={quantity >= (product.stock || 99)}
+                      className="h-7 w-7 rounded-lg text-xs font-extrabold hover:neu-inset-sm cursor-pointer flex items-center justify-center text-[#3D4852] disabled:opacity-30 disabled:cursor-not-allowed"
+                      title={quantity >= (product.stock || 99) ? "Đã đạt tối đa số lượng tồn kho" : "Tăng 1 sản phẩm"}
                     >
                       +
                     </button>
@@ -708,7 +742,10 @@ export default function CartPage() {
                       <button
                         key={m.id}
                         type="button"
-                        onClick={() => setPaymentMethod(m.id as "cod" | "banking" | "momo")}
+                        onClick={() => {
+                          setPaymentMethod(m.id as "cod" | "banking" | "momo");
+                          setPaymentPaid(false);
+                        }}
                         className={`rounded-2xl p-2.5 text-center text-xs font-bold transition-all duration-200 cursor-pointer ${
                           paymentMethod === m.id
                             ? "neu-accent font-extrabold"
@@ -727,6 +764,8 @@ export default function CartPage() {
                     method={paymentMethod}
                     finalAmount={finalTotal}
                     customerPhone={customerPhone}
+                    onPaymentSuccess={() => setPaymentPaid(true)}
+                    onStatusChange={(status) => setPaymentPaid(status === "PAID")}
                   />
                 )}
 
@@ -773,17 +812,35 @@ export default function CartPage() {
                   )}
                 </div>
 
+                {/* Hướng dẫn chờ thanh toán QR nếu chưa PAID */}
+                {(paymentMethod === "banking" || paymentMethod === "momo") && !paymentPaid && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 text-[11px] text-center font-bold animate-fadeIn">
+                    ⚠️ Vui lòng quét mã QR thanh toán phía trên để hoàn tất đơn hàng (Hệ thống AI sẽ tự động mở khóa nút ngay khi nhận được tiền).
+                  </div>
+                )}
+
                 <div className="pt-2">
                   <NeuButton
                     id="checkout-submit-btn"
                     type="submit"
                     variant="primary"
                     size="lg"
-                    disabled={loading}
+                    disabled={loading || ((paymentMethod === "banking" || paymentMethod === "momo") && !paymentPaid)}
                     loading={loading}
-                    className="w-full text-base font-extrabold shadow-lg"
+                    className={`w-full text-base font-extrabold shadow-lg transition-all ${
+                      paymentPaid
+                        ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white border border-emerald-400"
+                        : (paymentMethod === "banking" || paymentMethod === "momo") && !paymentPaid
+                        ? "opacity-60 cursor-not-allowed"
+                        : ""
+                    }`}
                   >
-                    <CreditCard className="h-5 w-5" /> Hoàn tất đặt đơn hàng ({formatVND(finalTotal)})
+                    <CreditCard className="h-5 w-5" />{" "}
+                    {paymentPaid
+                      ? `Đã thanh toán - Hoàn tất đặt hàng (${formatVND(finalTotal)})`
+                      : (paymentMethod === "banking" || paymentMethod === "momo")
+                      ? `Chờ thanh toán QR (${formatVND(finalTotal)})`
+                      : `Hoàn tất đặt đơn hàng (${formatVND(finalTotal)})`}
                   </NeuButton>
                 </div>
               </form>

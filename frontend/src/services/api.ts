@@ -115,6 +115,33 @@ export interface Voucher {
   updatedAt?: string;
 }
 
+export interface PaymentSession {
+  transactionCode: string;
+  expectedAmount: number;
+  status: "PENDING" | "PAID" | "EXPIRED";
+  paymentMethod: "banking" | "momo" | "qr";
+  bankRef?: string;
+  paidAt?: string;
+  qrUrl: string;
+  bankInfo?: {
+    bankId: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    amount: number;
+    content: string;
+  };
+  momoInfo?: {
+    phone: string;
+    accountName: string;
+    amount: number;
+    content: string;
+    qrUrl: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type Booking = RentalBooking;
 
 let isRefreshing = false;
@@ -368,6 +395,7 @@ export const api = {
     customerPhone: string;
     shippingAddress: string;
     paymentMethod?: "cod" | "banking" | "momo";
+    paymentStatus?: "pending" | "paid";
     voucherCode?: string;
     pointsToUse?: number;
     notes?: string;
@@ -597,5 +625,40 @@ export const api = {
   adminDeleteVoucher: (id: string) =>
     request<{ success: boolean; message: string; data: Voucher }>(`/vouchers/${id}`, {
       method: "DELETE",
+    }),
+
+  // Payment APIs (VietQR & MoMo Webhook Auto-Reconciliation)
+  createPaymentSession: (payload: {
+    amount: number;
+    method?: "banking" | "momo";
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ success: boolean; message: string; data: PaymentSession }>("/payments/create-session", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getPaymentSessionStatus: (transactionCode: string) =>
+    request<{ success: boolean; data: PaymentSession }>(`/payments/status/${encodeURIComponent(transactionCode)}`),
+
+  simulatePaymentWebhook: (payload: {
+    transactionCode?: string;
+    content?: string;
+    amount: number;
+    referenceCode?: string;
+  }) =>
+    request<{ success: boolean; message: string; session?: PaymentSession }>("/payments/webhook", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  // AI Chatbot Assistant API
+  chatWithAI: (payload: {
+    message: string;
+    history?: Array<{ role: "user" | "model" | "assistant"; text: string }>;
+  }) =>
+    request<{ success: boolean; reply: string; source?: string }>("/chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 };

@@ -12,6 +12,10 @@ import {
   Inbox,
   Home,
   ShieldCheck,
+  MapPin,
+  Phone,
+  Clock,
+  Flame,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
@@ -508,6 +512,18 @@ export function NeuNavbar() {
           >
             <Camera className="h-3.5 w-3.5" /> Thuê máy ảnh
           </Link>
+          <button
+            type="button"
+            id="nav-highlight-compare-btn"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("techhub:open_compare_modal"));
+            }}
+            className="rounded-xl px-3 py-1.5 text-xs font-black transition-all duration-200 cursor-pointer flex items-center gap-1.5 text-[#E53E3E] hover:neu-extruded-sm active:scale-95 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/60 shadow-xs"
+            title="So sánh thông số kỹ thuật các sản phẩm bán chạy nhất"
+          >
+            <Flame className="h-3.5 w-3.5 text-orange-500 animate-pulse" />
+            <span>Tin nổi bật</span>
+          </button>
           <Link
             to="/cart"
             id="nav-cart-link"
@@ -667,6 +683,17 @@ export function NeuNavbar() {
             >
               <UserIcon className="h-4 w-4" /> Tài khoản
             </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                window.dispatchEvent(new CustomEvent("techhub:open_compare_modal"));
+              }}
+              className="col-span-2 flex items-center justify-center gap-2 rounded-2xl p-3 text-xs font-black text-[#E53E3E] bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200/80 neu-extruded"
+            >
+              <Flame className="h-4 w-4 text-orange-500 animate-pulse" />
+              <span>🔥 Góc Công Nghệ & So Sánh Top Bán Chạy</span>
+            </button>
             {user && (user.role === "admin" || user.role === "staff") && (
               <Link
                 to="/management"
@@ -713,34 +740,103 @@ export function NeuNavbar() {
 /* -------------------------------------------------------------------------- */
 export function NeuFooter() {
   return (
-    <footer className="border-t border-[#D1D9E6]/80 bg-[#E0E5EC] py-12 text-[#6B7280] text-xs">
-      <div className="mx-auto max-w-7xl px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-2 font-extrabold text-[#3D4852] text-sm font-display">
-            <span className="h-2 w-2 rounded-full bg-[#6C63FF]" />
-            TECHHUB • Store & Camera Rental
+    <footer className="border-t border-[#D1D9E6]/80 bg-[#E0E5EC] pt-12 pb-8 text-[#6B7280] text-xs">
+      <div className="mx-auto max-w-7xl px-6 space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+          {/* CỘT 1: THƯƠNG HIỆU & PHÁP LÝ */}
+          <div className="md:col-span-5 space-y-3">
+            <div className="flex items-center gap-2.5 font-black text-[#3D4852] text-base font-display">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#6C63FF] shadow-[0_0_8px_rgba(108,99,255,0.6)]" />
+              TECHHUB • Store & Camera Rental
+            </div>
+            <p className="text-xs text-[#6B7280] leading-relaxed">
+              Hệ thống bán lẻ thiết bị công nghệ chính hãng, laptop flagship & dịch vụ cho thuê máy ảnh kỹ thuật số chuyên nghiệp hàng đầu.
+            </p>
+            <div className="p-3 rounded-2xl neu-inset-sm bg-[#E8EDF5]/70 space-y-1 text-[11px] text-[#4A5568]">
+              <p>
+                <strong className="text-[#3D4852]">Đại diện pháp luật & CEO:</strong> Nguyễn Nhật Minh
+              </p>
+              <p className="text-[10px] text-[#6B7280]">
+                TechHub Technology Solutions & Media Services Co., Ltd.
+              </p>
+            </div>
           </div>
-          <p className="mt-1.5 text-[#6B7280]">
-            Hệ thống bán lẻ thiết bị công nghệ & cho thuê máy ảnh chuyên nghiệp
-          </p>
+
+          {/* CỘT 2: ĐỊA CHỈ SHOWROOM & LIÊN HỆ */}
+          <div className="md:col-span-4 space-y-2.5">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#3D4852]">
+              Showroom & Hỗ trợ khách hàng
+            </h4>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-start gap-2 text-[#4A5568]">
+                <MapPin className="h-4 w-4 text-[#6C63FF] shrink-0 mt-0.5" />
+                <span>
+                  <strong>Địa chỉ Showroom:</strong> Tầng 3, Tòa nhà TechHub Tower, Số 175 Tây Sơn, Quận Đống Đa, TP. Hà Nội
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[#4A5568]">
+                <Phone className="h-4 w-4 text-[#38B2AC] shrink-0" />
+                <span>
+                  <strong>Hotline / Zalo:</strong>{" "}
+                  <a
+                    href="tel:0949654915"
+                    className="font-mono font-black text-[#6C63FF] hover:underline"
+                  >
+                    0949654915
+                  </a>{" "}
+                  <span className="text-[10px] text-[#6B7280]">(Hỗ trợ 24/7)</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[#4A5568]">
+                <Clock className="h-4 w-4 text-[#D97706] shrink-0" />
+                <span>
+                  <strong>Giờ mở cửa:</strong> 08:00 – 21:30 (Tất cả các ngày trong tuần)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* CỘT 3: LIÊN KẾT NHANH */}
+          <div className="md:col-span-3 space-y-2.5">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#3D4852]">
+              Khám phá nhanh
+            </h4>
+            <div className="flex flex-col space-y-2 font-semibold">
+              <Link to="/" className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5">
+                <span>Trang chủ cửa hàng</span>
+              </Link>
+              <Link to="/rentals" className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5">
+                <span>Dịch vụ thuê máy ảnh</span>
+              </Link>
+              <Link to="/cart" className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5">
+                <span>Giỏ hàng của bạn</span>
+              </Link>
+              <Link
+                to="/#tech-compare"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("techhub:open_compare_modal"));
+                }}
+                className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5 text-[#E53E3E] font-bold"
+              >
+                <Flame className="h-3.5 w-3.5" /> Tin nổi bật & So sánh
+              </Link>
+              <Link to="/account" className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5">
+                <span>Tài khoản & Tích điểm</span>
+              </Link>
+              <Link to="/login" className="hover:text-[#6C63FF] transition-colors flex items-center gap-1.5">
+                <span>Đăng nhập hệ thống</span>
+              </Link>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-6 font-semibold">
-          <Link to="/" className="hover:text-[#6C63FF] transition-colors">
-            Trang chủ
-          </Link>
-          <Link to="/rentals" className="hover:text-[#6C63FF] transition-colors">
-            Thuê máy ảnh
-          </Link>
-          <Link to="/cart" className="hover:text-[#6C63FF] transition-colors">
-            Giỏ hàng
-          </Link>
-          <Link to="/account" className="hover:text-[#6C63FF] transition-colors">
-            Tài khoản
-          </Link>
-          <Link to="/login" className="hover:text-[#6C63FF] transition-colors">
-            Đăng nhập
-          </Link>
+        {/* LIÊN KẾT PHỤ TINH TẾ */}
+        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] text-[#8C9BAE] pt-2">
+          <span className="hover:text-[#3D4852] transition cursor-pointer">Chính sách bảo mật</span>
+          <span>•</span>
+          <span className="hover:text-[#3D4852] transition cursor-pointer">Quy định thuê máy</span>
+          <span>•</span>
+          <span className="hover:text-[#3D4852] transition cursor-pointer">Bảo hành chính hãng 24/7</span>
         </div>
       </div>
     </footer>
